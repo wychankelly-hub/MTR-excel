@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>定過抬油：站長爭奪戰 E1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .hero { text-align: center; padding: 26px 16px 22px; background: var(--sign); color: #fff; border-bottom: 8px solid var(--accent); }
+  .hero h1 { font-size: 2.3rem; margin-bottom: .1em; }
+  .hero .muted { color: #B8C4CF; }
+  .cast { display: flex; justify-content: center; align-items: flex-end; gap: 10px; margin-top: 10px; }
+  .cast .char { --char-size: 104px; }
+  .cast .char-name { color: #fff; }
+  .login { max-width: 860px; margin: 0 auto; }
+  .tag { display: inline-block; font-weight: 700; font-size: .8em; padding: .1em .6em; border-radius: 6px; }
+  .tag.real { background: var(--ok-bg); color: var(--ok); }
+  .tag.demo { background: var(--warn-bg); color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="brand" style="justify-content:center"><span class="logo">抬</span><span>抬油站</span></div>
+  <h1>定過抬油：站長爭奪戰</h1>
+  <p class="muted">Episode 1《新人報到》· HKDSE ICT 試算表團隊競賽</p>
+  <div class="cast" id="cast"></div>
+</div>
+<main class="wrap login">
+  <div id="me" class="card" hidden></div>
+  <div class="grid2">
+    <section class="card" id="google-card">
+      <h2>Google 帳戶登入 <span class="tag real">正式模式</span></h2>
+      <p>學生及老師使用學校 Google 帳戶登入。正式比賽會為每隊建立真實的 Google Sheets 工作表。</p>
+      <div id="gsi"></div>
+      <p id="google-off" class="notice warn" hidden>此伺服器尚未設定 Google Sign-in（GOOGLE_CLIENT_ID），暫時只可以使用下方的 Demo 模式。設定方法見 <code>docs/SETUP_GOOGLE.md</code>。</p>
+    </section>
+    <section class="card" id="demo-card">
+      <h2>訪客登入 <span class="tag demo">不需 Google 帳戶</span></h2>
+      <p class="muted">訪客帳戶只可參加使用「網站內置工作表」的比賽（工作表在網站內，<strong>不是</strong>真實 Google Sheets）。</p>
+      <form id="demo-student" class="col">
+        <h3>學生</h3>
+        <div class="row">
+          <select id="demo-name-pick" aria-label="選擇名稱"></select>
+          <span class="muted">或</span>
+          <input id="demo-name" placeholder="English name" pattern="[A-Za-z0-9 _.\-]{1,24}" maxlength="24" autocomplete="off" inputmode="latin" aria-label="英文名稱">
+        </div>
+        <button class="primary" type="submit">以學生身份進入</button>
+      </form>
+      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+      <form id="demo-teacher" class="col">
+        <h3>老師</h3>
+        <div class="row">
+          <input id="demo-pin" type="password" placeholder="老師登入碼" maxlength="64" autocomplete="current-password" aria-label="老師登入碼">
+          <button type="submit">以老師身份進入</button>
+        </div>
+        <small>老師登入碼由管理員在雲端平台設定（環境變數 <code>DEMO_TEACHER_PIN</code>）。</small>
+      </form>
+      <p id="demo-off" class="notice warn" hidden>此伺服器已停用 Demo 登入。</p>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { api, h, toast } from '/js/common.js';
+import { Character } from '/js/characters.js';
+for (const id of ['fatmaster', 'chanding', 'rocket', 'bat']) document.getElementById('cast').append(new Character(id, { size: 104, showName: true }).el);
+
+const cfg = await api('GET', '/config');
+const me = await api('GET', '/me');
+
+function go(user) {
+  location.href = user.role === 'teacher' ? '/teacher' : '/student';
+}
+
+if (me.user) {
+  const box = document.getElementById('me');
+  box.hidden = false;
+  box.append(
+    h('div.row', h('span', `已登入：${me.user.name}（${me.user.role === 'teacher' ? '老師' : '學生'}${me.user.provider === 'demo' ? '・Demo' : ''}）`),
+      h('button.primary.right', { onclick: () => go(me.user) }, '繼續'),
+      h('button', { onclick: async () => { await api('POST', '/auth/logout'); location.reload(); } }, '登出')),
+  );
+}
+
+// Google Sign-in
+if (cfg.googleClientId) {
+  const s = document.createElement('script');
+  s.src = 'https://accounts.google.com/gsi/client';
+  s.async = true;
+  s.onload = () => {
+    google.accounts.id.initialize({
+      client_id: cfg.googleClientId,
+      callback: async ({ credential }) => {
+        try {
+          const r = await api('POST', '/auth/google', { credential });
+          go(r.user);
+        } catch (e) { toast(e.message, 'error'); }
+      },
+    });
+    google.accounts.id.renderButton(document.getElementById('gsi'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'zh-HK' });
+  };
+  s.onerror = () => toast('未能載入 Google 登入元件，請檢查網絡。', 'error');
+  document.head.append(s);
+} else {
+  document.getElementById('google-off').hidden = false;
+}
+
+// Demo
+if (!cfg.demoLoginAllowed) {
+  document.getElementById('demo-off').hidden = false;
+  document.querySelectorAll('#demo-card form').forEach((f) => (f.hidden = true));
+}
+const pick = document.getElementById('demo-name-pick');
+pick.append(h('option', { value: '' }, '— 選擇示範學生 —'));
+for (let i = 1; i <= 24; i++) pick.append(h('option', { value: `Student ${String(i).padStart(2, '0')}` }, `Student ${String(i).padStart(2, '0')}`));
+document.getElementById('demo-student').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('demo-name').value.trim() || pick.value;
+  if (!name) return toast('請選擇或輸入英文名稱。', 'error');
+  try { go((await api('POST', '/auth/demo', { role: 'student', name })).user); } catch (err) { toast(err.message, 'error'); }
+});
+document.getElementById('demo-teacher').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try { go((await api('POST', '/auth/demo', { role: 'teacher', pin: document.getElementById('demo-pin').value })).user); } catch (err) { toast(err.message, 'error'); }
+});
+</script>
+</body>
+</html>

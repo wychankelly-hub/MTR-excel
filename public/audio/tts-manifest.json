@@ -1,0 +1,212 @@
+{
+  "E1_INTRO_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "各位實習生，今日邊條綫做得最好，就有機會攞到最佳站長獎！",
+    "file": "E1_INTRO_01.mp3",
+    "generatedAt": "2026-10-28T07:12:32.509Z"
+  },
+  "E1_INTRO_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "Excel？小意思啦，我一定第一！",
+    "file": "E1_INTRO_02.mp3",
+    "generatedAt": "2026-10-28T07:12:33.761Z"
+  },
+  "E1_INTRO_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "做得快係好事，不過計啱最重要。",
+    "file": "E1_INTRO_03.mp3",
+    "generatedAt": "2026-10-28T07:12:35.271Z"
+  },
+  "L1_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "搞掂！我三秒就整好成張車費表！",
+    "file": "L1_OPEN_01.mp3",
+    "generatedAt": "2026-10-28T07:12:36.588Z"
+  },
+  "L1_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "弊啦！點解有啲乘客扣錯錢？我個菠蘿包都嚇跌咗！",
+    "file": "L1_OPEN_02.mp3",
+    "generatedAt": "2026-10-28T07:12:38.621Z"
+  },
+  "L1_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "先檢查公式，再睇吓複製落去之後邊啲參照變咗。",
+    "file": "L1_OPEN_03.mp3",
+    "generatedAt": "2026-10-28T07:12:40.243Z"
+  },
+  "L1_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "車費系統開始恢復啦！做得好！",
+    "file": "L1_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-10-28T07:12:41.310Z"
+  },
+  "L1_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "複製公式時，要分清邊啲參照會變，邊啲一定要固定呀！",
+    "file": "L1_CLOSE_01.mp3",
+    "generatedAt": "2026-10-28T07:12:43.337Z"
+  },
+  "L2_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "好多人呀！究竟邊個鐘頭最逼？",
+    "file": "L2_OPEN_01.mp3",
+    "generatedAt": "2026-10-28T07:12:44.421Z"
+  },
+  "L2_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "喂喂叔：大聲、低沉",
+    "text": "我打電話畀全家人，話呢度逼過年宵呀！",
+    "file": "L2_OPEN_02.mp3",
+    "generatedAt": "2026-10-28T07:12:45.571Z"
+  },
+  "L2_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "用數據搵答案，唔使靠估。",
+    "file": "L2_OPEN_03.mp3",
+    "generatedAt": "2026-10-28T07:12:46.546Z"
+  },
+  "L2_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "最高人流唔可以靠估，要先計好每個時段嘅總人流。",
+    "file": "L2_CLOSE_01.mp3",
+    "generatedAt": "2026-10-28T07:12:48.275Z"
+  },
+  "L3_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "乘客甲：原聲",
+    "text": "點解佢可以行優先通道，我唔得？",
+    "file": "L3_OPEN_01.mp3",
+    "generatedAt": "2026-10-28T07:12:49.482Z"
+  },
+  "L3_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "我用 IF 一秒幫你決定啦！",
+    "file": "L3_OPEN_02.mp3",
+    "generatedAt": "2026-10-28T07:12:50.457Z"
+  },
+  "L3_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "先睇清楚「或者」同「而且」，唔好又搞錯。",
+    "file": "L3_OPEN_03.mp3",
+    "generatedAt": "2026-10-28T07:12:51.696Z"
+  },
+  "L3_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "記住，「或者」通常要諗 OR，「而且」通常要諗 AND。",
+    "file": "L3_CLOSE_01.mp3",
+    "generatedAt": "2026-10-28T07:12:53.360Z"
+  },
+  "L4_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "成個失物房都塞爆啦！仲有人執到個梳化咕𠱸？",
+    "file": "L4_OPEN_01.mp3",
+    "generatedAt": "2026-10-28T07:12:55.229Z"
+  },
+  "L4_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "我計好晒！吓……點解同尋日唔同？",
+    "file": "L4_OPEN_02.mp3",
+    "generatedAt": "2026-10-28T07:12:56.265Z"
+  },
+  "L4_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "用條件函數逐項核對，唔好靠人手數。",
+    "file": "L4_OPEN_03.mp3",
+    "generatedAt": "2026-10-28T07:12:57.654Z"
+  },
+  "L4_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "咦？點解啲奇怪紀錄成日喺午飯附近出現？",
+    "file": "L4_CLOSE_01.mp3",
+    "generatedAt": "2026-10-28T07:12:59.078Z"
+  },
+  "L5_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "車站廣播全部變晒亂碼！係咪有人喺度搞鬼？",
+    "file": "L5_OPEN_01.mp3",
+    "generatedAt": "2026-10-28T07:13:01.100Z"
+  },
+  "L5_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "唔關我事呀！我今日冇掂過廣播系統！",
+    "file": "L5_OPEN_02.mp3",
+    "generatedAt": "2026-10-28T07:13:02.266Z"
+  },
+  "L5_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "每條代碼都有一個英文字母，搵齊五個就有線索啦。",
+    "file": "L5_OPEN_03.mp3",
+    "generatedAt": "2026-10-28T07:13:03.849Z"
+  },
+  "L5_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "有隊伍已經破解咗廣播密碼，等全班完成先一齊揭曉！",
+    "file": "L5_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-10-28T07:13:05.720Z"
+  },
+  "E1_FINAL_REVEAL_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "五個字母連埋，原來係 LUNCH。",
+    "file": "E1_FINAL_REVEAL_01.mp3",
+    "generatedAt": "2026-10-28T07:13:06.941Z"
+  },
+  "E1_FINAL_REVEAL_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "點解啲異常次次都係午飯時間？",
+    "file": "E1_FINAL_REVEAL_02.mp3",
+    "generatedAt": "2026-10-28T07:13:08.397Z"
+  },
+  "E1_FINAL_REVEAL_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "午飯時間？唔係又賴我呀嘛！",
+    "file": "E1_FINAL_REVEAL_03.mp3",
+    "generatedAt": "2026-10-28T07:13:09.258Z"
+  },
+  "E1_FINAL_REVEAL_04": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "……你哋唔係懷疑我呀嘛？",
+    "file": "E1_FINAL_REVEAL_04.mp3",
+    "generatedAt": "2026-10-28T07:13:09.909Z"
+  },
+  "E1_FINAL_REVEAL_05": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "下次一定要查清楚！唔好亂咁冤枉人！",
+    "file": "E1_FINAL_REVEAL_05.mp3",
+    "generatedAt": "2026-10-28T07:13:11.137Z"
+  },
+  "TIMER_WARNING_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "仲有一分鐘！大家檢查清楚先好提交！",
+    "file": "TIMER_WARNING_01.mp3",
+    "generatedAt": "2026-10-28T07:13:12.543Z"
+  }
+}

@@ -1,0 +1,42 @@
+# Render Blueprint：在 Render 網站按「New → Blueprint」選擇此 GitHub repo 即可一次建立：
+#   1. 網頁服務（Node.js，HTTPS 網址，例如 https://taiyau-station.onrender.com）
+#   2. 雲端 PostgreSQL 資料庫（比賽、成績、隊伍、上載的錄音及角色圖片）
+# 老師電腦關掉後伺服器及資料都會繼續存在。
+services:
+  - type: web
+    name: taiyau-station
+    runtime: node
+    plan: starter            # 建議付費 starter：不會休眠；free 方案閒置 15 分鐘後會休眠（第一次開啟約需 1 分鐘）
+    region: singapore        # 最接近香港的 Render 地區
+    numInstances: 1          # 遊戲狀態及即時推送設計為單一實例
+    buildCommand: npm ci --omit=optional
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: taiyau-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true  # Render 自動產生長隨機字串
+      - key: ALLOW_DEMO_LOGIN
+        value: "true"
+      - key: DEMO_TEACHER_PIN  # 老師登入碼：部署時在 Render 網頁輸入（請用至少 8 位、不易猜的數字／字母）
+        sync: false
+      - key: GOOGLE_CLIENT_ID  # （可選）Google 登入
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: TEACHER_EMAILS
+        sync: false
+      - key: ALLOWED_EMAIL_DOMAINS
+        sync: false
+
+databases:
+  - name: taiyau-db
+    plan: basic-256mb        # 付費基本方案；free 資料庫會在 30 天後到期，不適合長期使用
+    region: singapore
+    databaseName: taiyau

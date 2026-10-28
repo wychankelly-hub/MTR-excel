@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>投影 · 定過抬油 E1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  :root { font-size: clamp(15px, 1.05vw, 22px); --header-h: 84px; }
+  body { overflow-x: hidden; }
+  .topbar .pids-time { font-size: 2.6rem; }
+  .topbar .pids { min-width: 190px; }
+  .pj-route { background: var(--panel); border-bottom: 1px solid var(--line); padding: 0 6vw; }
+  .pj-main { display: grid; grid-template-columns: 1.3fr 1fr; gap: 22px; padding: 20px 24px; min-height: calc(100vh - var(--header-h) - 170px); }
+  @media (max-width: 1000px) { .pj-main { grid-template-columns: 1fr; } }
+  .stage { position: relative; background: linear-gradient(180deg, #DDE7F0 0%, #EEF3F7 62%, #9AA6B1 62%, #9AA6B1 64%, #C4CCD3 64%, #C4CCD3 100%); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); min-height: 560px; }
+  @media (prefers-color-scheme: dark) { .stage { background: linear-gradient(180deg, #1D2833 0%, #24313D 62%, #46525D 62%, #46525D 64%, #2E3740 64%, #2E3740 100%); } }
+  .stage-sign { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); background: var(--sign); color: #fff; border-radius: 10px; padding: 6px 22px; font-weight: 900; letter-spacing: .2em; border-bottom: 5px solid var(--accent); white-space: nowrap; }
+  .stage-sign small { color: #B8C4CF; letter-spacing: .1em; margin-left: .6em; font-weight: 500; }
+  .platform-edge { position: absolute; left: 0; right: 0; top: calc(64% - 6px); height: 6px; background: repeating-linear-gradient(90deg, #F2C230 0 30px, #2A2F35 30px 40px); opacity: .8; }
+  .cast { display: flex; justify-content: center; align-items: flex-end; gap: 1.6vw; padding: 70px 20px 0; flex: 1; }
+  .cast .char { --char-size: clamp(110px, 11vw, 200px); transition: transform .35s, filter .35s, opacity .35s; }
+  .cast .char.speaking { transform: scale(1.12); filter: drop-shadow(0 8px 16px rgba(0,0,0,.25)); z-index: 2; }
+  .cast .char .char-name { background: var(--sign); color: #fff; border-radius: 6px; display: inline-block; padding: 0 8px; margin: 4px auto 0; }
+  .cast .char { text-align: center; }
+  .stage-bubble { margin: 0 22px 22px; position: relative; z-index: 3; }
+  .stage-bubble .bubble { min-height: 120px; }
+  .stage-bubble .bubble::before { display: none; }
+  .stage-bubble .bubble-text { font-size: 2rem; line-height: 1.4; }
+  .stage-bubble .bubble-name { font-size: 1.05rem; padding: 2px 14px; }
+  .stage-bubble .idle { color: var(--ink-3); font-size: 1.2rem; font-weight: 700; }
+  .lobby { position: absolute; inset: 70px 20px auto; text-align: center; z-index: 4; }
+  .joinsign { display: inline-block; background: var(--sign); color: #fff; border-radius: 18px; padding: 14px 40px 18px; border-bottom: 8px solid var(--accent); box-shadow: var(--shadow); }
+  .joinbig { font-family: var(--mono); font-size: 5.4rem; font-weight: 900; letter-spacing: .22em; line-height: 1.1; color: var(--amber); text-shadow: 0 0 18px rgba(255,176,32,.4); }
+  .reveal { position: absolute; inset: 60px 20px auto; text-align: center; z-index: 5; }
+  .reveal-word { display: inline-flex; gap: 12px; }
+  .reveal-word span { width: 1.25em; height: 1.4em; display: grid; place-items: center; background: var(--sign); color: var(--amber); font-family: var(--mono); font-size: 5rem; font-weight: 900; border-radius: 14px; border-bottom: 8px solid var(--accent); animation: flip .7s cubic-bezier(.2,.8,.2,1) both; }
+  .reveal-teaser { margin-top: 14px; display: inline-block; background: var(--accent); color: #fff; font-weight: 900; font-size: 1.5rem; padding: 6px 22px; border-radius: 12px; animation: popIn .5s 1.4s both; }
+  @keyframes flip { from { transform: rotateX(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  .ticker { position: absolute; right: 16px; top: 66px; display: flex; flex-direction: column; gap: 8px; z-index: 6; align-items: flex-end; }
+  .tick { background: var(--panel); border-left: 8px solid var(--c); border-radius: 10px; padding: 6px 14px; font-weight: 800; box-shadow: var(--shadow); animation: slideIn .35s ease; }
+  .tick.big { background: var(--c); color: #fff; font-size: 1.3rem; }
+  @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .clues { position: absolute; left: 16px; top: 66px; z-index: 4; max-width: 32%; }
+  .clue { background: rgba(255,255,255,.88); color: #1B2631; border-radius: 10px; padding: 6px 12px; margin-bottom: 6px; font-weight: 700; font-size: .9rem; border-left: 5px solid var(--accent); }
+  .board h2 { display: flex; align-items: center; gap: 10px; }
+  .board .race-row { padding: 12px 18px 12px 12px; }
+  .pj-foot { display: flex; gap: 8px; align-items: center; padding: 6px 24px 14px; flex-wrap: wrap; font-size: .9rem; }
+  .pj-foot button { min-height: 36px; padding: .2em .8em; }
+  .pj-overlay { position: fixed; inset: 0; background: rgba(10,16,22,.6); display: grid; place-items: center; z-index: 80; }
+  .enable-hint { position: fixed; left: 50%; top: 150px; transform: translateX(-50%); z-index: 70; background: var(--sign); color: #fff; border-radius: 14px; padding: 12px 20px; font-weight: 800; box-shadow: 0 16px 30px rgba(0,0,0,.3); display: flex; gap: 12px; align-items: center; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">抬</span><span><span id="title">定過抬油：站長爭奪戰</span><br><span class="sub" id="subtitle">Episode 1《新人報到》</span></span></div>
+  <span id="lvl" class="row"></span>
+  <span id="status" class="pill"></span>
+  <span class="right" id="pidsbox"></span>
+</header>
+<div id="banner"></div>
+<div id="route" class="pj-route"></div>
+<div class="pj-main">
+  <section class="stage" id="stage">
+    <div class="stage-sign">抬油站<small>TAI YAU STATION</small></div>
+    <div class="platform-edge"></div>
+    <div class="clues" id="clues"></div>
+    <div class="ticker" id="ticker"></div>
+    <div id="overlaybox"></div>
+    <div class="cast" id="cast"></div>
+    <div class="stage-bubble" id="bubble"></div>
+  </section>
+  <section class="board" id="board"><h2>🚆 即時排行榜</h2><div id="race"></div></section>
+</div>
+<div class="pj-foot">
+  <button id="enable" class="primary" type="button">🔊 啟用投影聲音</button>
+  <button id="claim" type="button" hidden>改由這個畫面播放聲音</button>
+  <button id="mute" type="button">靜音</button>
+  <label>音量 <input id="vol" type="range" min="0" max="1" step="0.05" value="0.9"></label>
+  <button id="replay" type="button">⟲ 重播對白</button>
+  <button id="skip" type="button">⏭ 跳過</button>
+  <button id="bgmbtn" type="button">♫ 背景音樂</button>
+  <span id="audio-state" class="muted"></span>
+  <span id="conn" class="pill right">連線中…</span>
+</div>
+<div id="overlay" class="pj-overlay">
+  <div class="card" style="max-width:640px;text-align:center">
+    <h2>🔊 啟用投影聲音</h2>
+    <p style="font-size:1.1rem">全班的劇情對白、廣東話配音及背景音樂只會由<strong>這個投影畫面</strong>播放（老師控制台及學生裝置不會播放劇情聲音）。</p>
+    <p class="muted">瀏覽器規定要按一下才可以播放聲音。只需按一次，之後所有劇情都會自動播放。</p>
+    <div class="row" style="justify-content:center">
+      <button id="enable2" class="primary big" type="button">🔊 啟用投影聲音</button>
+      <button id="nosound" type="button">只顯示字幕</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="/js/projector.js"></script>
+</body>
+</html>

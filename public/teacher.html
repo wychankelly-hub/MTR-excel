@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教師控制台 · 定過抬油 E1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body { padding-bottom: 104px; }
+  .stepper { display: flex; gap: 0; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .stepper span { position: relative; padding: .3em .9em .3em 1.75em; font-size: .82em; font-weight: 700; color: var(--ink-3); }
+  .stepper span::before { content: ""; position: absolute; left: .3em; top: 50%; width: .7em; height: .7em; margin-top: -.35em; border-radius: 50%; border: 3px solid var(--line); background: var(--panel); }
+  .stepper span.done { color: var(--ok); }
+  .stepper span.done::before { background: var(--ok); border-color: var(--ok); }
+  .stepper span.now { color: var(--accent); }
+  .stepper span.now::before { border-color: var(--accent); animation: ping 1.8s infinite; --line: var(--accent); }
+  .big-code { font-family: var(--mono); font-size: 2.6rem; font-weight: 900; letter-spacing: .2em; color: var(--amber); background: #0B0F14; border-radius: 12px; padding: 0 .4em; display: inline-block; }
+  .team-card { border-left: 10px solid var(--c); }
+  .flag { font-family: var(--mono); font-size: .85em; }
+  td.pass { color: var(--ok); } td.fail { color: var(--bad); font-weight: 700; }
+  .feed { max-height: 560px; overflow: auto; }
+  .bar { height: 10px; background: var(--bg-2); border-radius: 5px; overflow: hidden; min-width: 60px; }
+  .bar i { display: block; height: 100%; background: var(--ok); }
+  .hero { background: linear-gradient(110deg, var(--sign) 0%, #2C3E50 100%); color: #fff; border: none; border-bottom: 6px solid var(--accent); }
+  .hero .muted, .hero small { color: #B8C4CF; }
+  .hero .btn:not(.primary), .hero button:not(.primary):not(.ok) { background: var(--sign-2); color: #fff; border-color: #3B4D5E; }
+  .stations { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 1100px) { .stations { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+  .st-card { background: var(--panel); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); border-top: 8px solid #A9B4BF; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .st-card.active { border-top-color: var(--accent); box-shadow: 0 0 0 3px rgba(209, 43, 43, .25), var(--shadow); }
+  .st-card.ended { border-top-color: var(--ok); }
+  .st-card.skipped { opacity: .7; }
+  .st-head { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; }
+  .st-actions { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: auto; }
+  .st-actions > button { width: 100%; }
+  .st-card .pids { min-width: 0; }
+  .audio-out { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--panel-2); border-radius: 12px; padding: 10px 12px; }
+  .event-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--sign); color: #fff; display: flex; align-items: center; gap: 12px; padding: 8px 18px; border-top: 5px solid var(--accent); min-height: 92px; }
+  .dock #dock-cast { display: flex; align-items: flex-end; gap: 4px; }
+  .dock #dock-cast .char:not(.speaking) { display: none; }
+  .dock #dock-cast .char-name { color: #fff; font-size: .72rem; }
+  .dock #dock-bubble { flex: 1; color: var(--ink); }
+  .dock #dock-bubble .bubble { min-height: 0; padding: 6px 14px 8px; }
+  .dock #dock-bubble .bubble::before { display: none; }
+  .dock #dock-bubble .bubble-text { font-size: 1.02rem; }
+  .dock #dock-bubble .idle { color: var(--ink-3); font-weight: 700; }
+  .dock #dock-audio { font-size: .85rem; color: #C9D3DC; white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">抬</span><span>教師控制台<br><span class="sub">定過抬油：站長爭奪戰 E1</span></span></div>
+  <select id="comp-pick" aria-label="選擇比賽"></select>
+  <span id="status" class="pill"></span>
+  <span id="timer" class="timer right"></span>
+  <span id="conn" class="conn pill"></span>
+  <span id="who" class="muted"></span>
+  <button id="logout" class="small" type="button">登出</button>
+</header>
+<div id="banner"></div>
+<main class="wrap">
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <div id="view"></div>
+</main>
+<div class="dock" aria-live="polite">
+  <div id="dock-cast"></div>
+  <div id="dock-bubble"></div>
+  <div id="dock-audio">🔈</div>
+</div>
+<dialog id="dlg"><div id="dlg-body"></div><div class="row" style="margin-top:12px"><button class="right" type="button" onclick="this.closest('dialog').close()">關閉</button></div></dialog>
+<script type="module" src="/js/teacher.js"></script>
+</body>
+</html>

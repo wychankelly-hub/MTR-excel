@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>學生 · 定過抬油 E1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .routebar { background: var(--panel); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr minmax(300px, 640px) 1fr; align-items: center; gap: 12px; padding: 0 18px; }
+  .routebar .lvl-title { font-weight: 900; font-size: 1.15rem; display: flex; align-items: center; gap: 10px; }
+  .routebar .lvl-title .line-chip { font-size: .9rem; height: 1.8em; }
+  @media (min-width: 1101px) {
+    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    #main { flex: 1; min-height: 0; overflow-y: auto; }
+    .topbar { position: static; }
+  }
+  .play { display: grid; grid-template-columns: minmax(380px, 450px) 1fr; gap: 16px; padding: 14px 18px 18px; height: 100%; }
+  .panel { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+  .play > * { min-width: 0; }
+  .sheetbox { min-height: 0; }
+  @media (max-width: 1100px) {
+    .play { grid-template-columns: 1fr; height: auto; }
+    .sheetbox { height: 78vh; }
+    .routebar { grid-template-columns: 1fr; padding: 6px 12px; }
+  }
+  .lvl-card { border-top: 8px solid var(--line-color, var(--accent)); }
+  .lvl-head { display: flex; align-items: center; gap: 10px; }
+  .lvl-head h2 { margin: 0; font-size: 1.35rem; }
+  .goal { font-size: 1.02rem; }
+  .story { background: var(--panel-2); border-radius: 14px; padding: 10px; }
+  .story .char { --char-size: 74px; }
+  .story-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .story-dots { display: flex; gap: 5px; }
+  .story-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+  .story-dots span.on { background: var(--sign); }
+  .task-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .task-tab { min-height: 40px; padding: .2em .8em; border-radius: 10px; font-family: var(--mono); box-shadow: none; }
+  .task-tab.on { background: var(--sign); color: #fff; border-color: var(--sign); }
+  .task-tab.done { border-color: var(--ok); color: var(--ok); }
+  .task-tab.on.done { background: var(--ok); color: #fff; }
+  .task-tab.bad { border-color: #E9B44C; }
+  .submit-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .submit-row .primary { flex: 1; min-width: 180px; }
+  .team-chip { display: inline-flex; align-items: center; gap: .4em; font-weight: 900; padding: .2em .9em; border-radius: 999px; color: #fff; font-size: 1rem; }
+  .sfxbox { display: inline-flex; align-items: center; gap: 6px; }
+  .sfxbox input[type=range] { width: 84px; min-height: 0; padding: 0; accent-color: #FFB020; }
+  .score-big { font-weight: 900; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .joinbox { max-width: 760px; margin: 30px auto; }
+  .joincode { font-family: var(--mono); font-size: 2rem; letter-spacing: .3em; text-transform: uppercase; width: 8.5em; text-align: center; font-weight: 800; }
+  .teams-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+  .teams-pick button { color: #fff; min-height: 72px; font-size: 1.15rem; border: none; border-radius: 14px; box-shadow: 0 4px 0 rgba(0,0,0,.25); flex-direction: column; gap: 0; }
+  .welcome-cast { display: flex; justify-content: center; gap: 6px; align-items: flex-end; margin: 6px 0 10px; }
+  .welcome-cast .char { --char-size: 96px; }
+  .podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 10px 0 20px; }
+  .podium div { border-radius: 12px 12px 0 0; color: #fff; text-align: center; padding: 10px 14px; min-width: 120px; font-weight: 900; }
+</style>
+</head>
+<body>
+<header class="topbar" id="topbar">
+  <div class="brand"><span class="logo">抬</span><span><span id="title">定過抬油：站長爭奪戰</span><br><span class="sub">Episode 1《新人報到》</span></span></div>
+  <span id="team"></span>
+  <span class="right row" style="gap:12px">
+    <span id="pidsbox"></span>
+    <span class="col" style="gap:0;align-items:flex-end"><small>本隊總分</small><span id="score" class="score-big">0</span></span>
+    <span class="sfxbox" title="遊戲音效（只在本機播放，與老師投影的劇情聲音分開）">
+      <button id="sound" class="small" type="button" aria-label="音效開關">🔊</button>
+      <input id="sfxvol" type="range" min="0" max="1" step="0.05" aria-label="音效音量">
+      <span id="sfxhint" class="pill warn" hidden>按一下畫面啟用音效</span>
+    </span>
+    <span id="conn" class="conn pill">連線中…</span>
+    <button id="switch" class="small" type="button" title="加入另一場比賽">切換比賽</button>
+    <button id="logout" class="small" type="button">登出</button>
+  </span>
+</header>
+<div id="banner"></div>
+<div id="routebar" class="routebar" hidden></div>
+<main id="main"><p class="wrap muted">載入中…</p></main>
+<script type="module" src="/js/student.js"></script>
+</body>
+</html>
