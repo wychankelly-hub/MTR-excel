@@ -129,8 +129,10 @@ export function flush() {
   for (const [k, json] of changes) lastSaved.set(k, json);
   for (const k of removed) lastSaved.delete(k);
   writing = writing.then(async () => {
-    const client = await pool.connect();
+    let client = null;
     try {
+      // Neon 免費資料庫閒置會休眠並中斷連線；connect 失敗亦要重試，不可令之後的寫入停止
+      client = await pool.connect();
       await client.query('BEGIN');
       for (const [k, json] of changes) {
         await client.query('INSERT INTO ty_kv (key, value, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()', [k, json]);
@@ -138,12 +140,12 @@ export function flush() {
       if (removed.length) await client.query('DELETE FROM ty_kv WHERE key = ANY($1)', [removed]);
       await client.query('COMMIT');
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client?.query('ROLLBACK').catch(() => {});
       for (const [k] of changes) lastSaved.delete(k); // 下次重試
       console.error('寫入資料庫失敗，稍後重試：', e.message);
       setTimeout(save, 2000);
     } finally {
-      client.release();
+      client?.release();
     }
   });
   return writing;

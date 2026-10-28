@@ -1,62 +1,69 @@
-# 雲端部署指南（全部在網頁完成，不需要終端機）
+# 雲端部署指南（全免費，全部在網頁完成，不需要終端機）
 
 部署後，遊戲在雲端 24 小時運行：老師及學生在學校電腦用 Chrome／Edge 開啟一個 HTTPS 網址即可，**不需要安裝任何軟件、不需要管理員權限、不需要老師的手提電腦一直開著**。所有比賽資料存放在雲端資料庫，老師關掉電腦、伺服器重新啟動或重新部署，資料都不會消失。
 
 ## 架構（已經做好）
 | 部分 | 服務 | 說明 |
 |-|-|-|
-| 網站及伺服器（前端＋後端＋即時排行榜） | **Render Web Service** | Node.js，自動 HTTPS 網址，例如 `https://taiyau-station.onrender.com` |
-| 資料庫（比賽、隊伍、提交、分數、登入 session） | **Render PostgreSQL**（或 Neon／Supabase） | 透過 `DATABASE_URL` 連接 |
+| 網站及伺服器（前端＋後端＋即時排行榜） | **Render Web Service（Free）** | Node.js，自動 HTTPS 網址，例如 `https://taiyau-station.onrender.com` |
+| 資料庫（比賽、隊伍、提交、分數、登入 session） | **Neon PostgreSQL（Free）** | 透過 `DATABASE_URL` 連接；資料長期保存，不會到期 |
 | 資產（廣東話配音、角色圖片） | 附帶配音隨網站部署；老師上載的錄音及角色圖片存於資料庫 | 不需另外開設儲存服務 |
 | 密碼及金鑰 | Render 的 Environment 設定頁 | 只在伺服器，不會傳到瀏覽器 |
 
-專案已包含 `render.yaml`（Render Blueprint），一次建立網站及資料庫。
+專案已包含 `render.yaml`（Render Blueprint，已設定為免費方案）。**全部費用：US$0。**
 
 ---
 
 ## 你需要親自完成的步驟
 
-### 步驟 1：把程式碼放到 GitHub（一次）
-Render 由 GitHub 讀取程式碼並自動部署。
-1. 到 <https://github.com> 登記免費帳戶（如未有）。
-2. 按右上角「＋」→「New repository」，名稱例如 `taiyau-station`，選 **Private**，**不要**勾選任何初始化選項，按「Create repository」。
-3. 告訴 Claude 這個 repo 的名稱（例如 `你的帳戶/taiyau-station`）並在 Claude 連接 GitHub，Claude 會把全部程式碼推送上去。
-   （或者在 repo 頁面按「uploading an existing file」，把專案資料夾內容拖放上傳；`node_modules`、`data`、`models` 不用上傳。）
+### 步驟 1：程式碼（已完成）
+程式碼已放在 GitHub：`wychankelly-hub/MTR-SQL`。之後修改程式碼推送到這個 repo，Render 會自動重新部署。
 
-### 步驟 2：在 Render 建立網站及資料庫（約 10 分鐘）
-1. 到 <https://render.com>，按「Get Started」，選 **Sign in with GitHub**。
-2. 授權 Render 存取剛才的 repo。
-3. 在 Render Dashboard 按「**New +**」→「**Blueprint**」→ 選擇 `taiyau-station` repo。
-4. Render 會讀取 `render.yaml`，列出：
-   - Web Service `taiyau-station`（Starter 方案）
-   - PostgreSQL `taiyau-db`（Basic-256mb 方案）
-5. 頁面會要求填寫：
+### 步驟 2：建立免費 Neon 資料庫（約 5 分鐘）
+1. 到 <https://neon.tech> → 「Sign up」，以 GitHub 或 Google 帳戶登記（**Free 方案，不需要信用卡**）。
+2. 建立 Project：
+   - Project name：`taiyau`
+   - Postgres version：預設即可
+   - **Region：AWS Asia Pacific (Singapore)**（最接近香港，亦與 Render 同區）
+3. 建立後，在 Project Dashboard 按「**Connect**」，複製 **Connection string**，格式類似：
+   `postgresql://neondb_owner:xxxxxxxx@ep-xxxx-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+   - 「Connection pooling」開或關都可以。
+   - 這串字包含密碼，**只貼在 Render 的設定頁**，不要放在 GitHub 或傳給學生。
+4. 不需要自己建立資料表：網站第一次啟動時會自動建立。
+
+### 步驟 3：在 Render 建立免費網站（約 10 分鐘）
+1. 到 <https://render.com> →「Get Started」→ **Sign in with GitHub**。
+2. 授權 Render 存取 `MTR-SQL` repo（可選「Only select repositories」並只勾選它）。
+3. 在 Render Dashboard 按「**New +**」→「**Blueprint**」→ 選擇 `MTR-SQL`。
+4. Render 讀取 `render.yaml` 後，會列出 Web Service `taiyau-station`（**Free** 方案），並要求填寫：
+   - **DATABASE_URL**：貼上步驟 2 複製的 Neon Connection string。
    - **DEMO_TEACHER_PIN**：老師登入碼（至少 8 個字元，例如 `Tai-You-2026!`，請保密）。
    - 其餘（GOOGLE_CLIENT_ID 等）可以**留空**，日後再填。
-6. 按「**Apply**」。第一次建立約需 3–6 分鐘。
-7. 完成後，在 Web Service 頁面頂部會見到網址，例如 `https://taiyau-station.onrender.com`。這就是給老師及學生的網址。
+5. 按「**Apply**」。第一次建立約需 3–6 分鐘。
+6. 完成後，Web Service 頁面頂部會見到網址，例如 `https://taiyau-station.onrender.com`。這就是給老師及學生的網址。
+7. 開啟 `https://你的網址/healthz`，應見到 `"driver":"postgres"`，代表已連接 Neon 資料庫。
 
-### 步驟 3：測試
+> 如 Render 在過程中要求輸入信用卡（作身份驗證），只要所有項目都是 **Free**，就不會收費。如不想提供信用卡，可改按「New + → Web Service」手動建立（Instance Type 選 Free，Build Command `npm ci --omit=optional`，Start Command `npm start`，並在 Environment 加入 `NODE_ENV=production`、`DATABASE_URL`、`DEMO_TEACHER_PIN`、`SESSION_SECRET`（自行輸入一串長隨機字母數字）、`ALLOW_DEMO_LOGIN=true`）。
+
+### 步驟 4：測試
 1. 用學校電腦開啟網址 → 「訪客登入 → 老師」輸入老師登入碼。
 2. 建立比賽 → 生成數據 → 批准 → 開放大堂。
 3. 在投影電腦開啟「投影畫面」，按一次「🔊 啟用投影聲音」。
 4. 用另一部電腦／手機以學生身份加入，試玩第 1 關。
 5. 關掉老師電腦，再用另一部電腦開啟網址 → 比賽及分數仍在。
 
-### 費用（請以 Render 網站最新價格為準）
-| 項目 | 方案 | 約價 | 說明 |
-|-|-|-|-|
-| Web Service | Starter | 約 US$7／月 | 一直運行，不會休眠（**建議**） |
-| PostgreSQL | Basic-256mb | 約 US$6／月 | 資料長期保存（**建議**） |
-| 免費選項 | Free web + Free Postgres | US$0 | Free web 閒置 15 分鐘會休眠，第一次開啟要等約 1 分鐘；Free Postgres **30 天後到期**，不適合正式使用 |
+### 免費方案須知（重要）
+| 限制 | 影響 | 做法 |
+|-|-|-|
+| Render Free 閒置 15 分鐘會**休眠** | 休眠後第一個人開啟網址要等約 30–60 秒 | **上課前 5 分鐘**先由老師開啟網址喚醒。比賽開放大堂後至結果期間，系統每 10 分鐘自動喚醒自己，投影畫面亦每 15 秒回報一次，課堂中不會休眠 |
+| Render Free 每月 750 小時運行時間 | 一個網站整月不停運行亦不會超出 | 不要在同一 Render 帳戶建立其他免費網站 |
+| Render Free CPU 較慢（0.1 CPU） | 「生成數據／預檢」可能需要數秒；一班 20 人批改無問題 | 課前先完成預檢 |
+| Render 休眠／重新部署時伺服器重新啟動 | 比賽資料已存於 Neon，**不會遺失**；學生畫面會自動重新連線 | — |
+| Neon Free 閒置約 5 分鐘會暫停 | 下一次讀寫自動喚醒（約 1 秒）；系統已處理斷線並自動重試寫入 | — |
+| Neon Free 儲存 0.5 GB | 比賽資料很小；老師上載的錄音及角色圖片亦存於資料庫 | 角色圖片建議每張 1 MB 以下 |
+| Neon Free 沒有長期自動備份 | — | 每次比賽後在「F. 結果」匯出 CSV 保存 |
 
-需要信用卡才可以使用付費方案。如學校不容許，可改用下面「免費資料庫」做法。
-
-### （可選）免費的長期資料庫：Neon
-1. 到 <https://neon.tech> 以 GitHub／Google 登記免費帳戶 → 建立 Project（Region 選 Singapore）。
-2. 複製「Connection string」（`postgresql://…`）。
-3. 在 Render 的 Web Service →「Environment」→ 把 `DATABASE_URL` 改為這個字串 → Save（會自動重新部署）。
-4. 可以刪除 Render 的 `taiyau-db`。
+（以上為現時 Render／Neon 公開的免費方案條款，如有更改以其網站為準。）
 
 ---
 
@@ -83,12 +90,13 @@ Render → Web Service → Settings → Custom Domains，可使用學校網域�
 | 想做的事 | 在哪裏 |
 |-|-|
 | 建立／管理比賽、匯出成績 | 遊戲網站的教師控制台 |
-| 更改老師登入碼、Google 設定 | Render → Web Service → Environment |
+| 更改老師登入碼、資料庫連線、Google 設定 | Render → Web Service → Environment |
 | 查看伺服器狀態及記錄 | Render → Web Service → Logs／Metrics；或開啟 `https://你的網址/healthz` |
-| 備份資料庫 | Render → PostgreSQL → Backups（付費方案每日自動備份） |
+| 查看／備份資料庫 | Neon → Project → Tables；成績請在遊戲「F. 結果」匯出 CSV |
 | 更新程式 | 程式碼推送到 GitHub 後 Render 自動重新部署（資料不受影響） |
 
 ## 技術備註（給協助的 IT 同事）
+- 資料庫：任何 PostgreSQL 均可（`DATABASE_URL`）；Neon 使用 SSL 並驗證證書。
 - 單一實例設計（`numInstances: 1`）：遊戲狀態在記憶體並即時寫入 PostgreSQL（只寫入有改變的資料，約 0.2 秒內）；重新啟動時由資料庫載入。
 - 健康檢查：`GET /healthz`（資料庫就緒才回傳 200）。
 - 亦可用 `Dockerfile` 部署到 Google Cloud Run（設定 `--max-instances=1 --min-instances=1 --timeout=3600`）配合 Neon／Cloud SQL。

@@ -1,12 +1,12 @@
 # 《定過抬油：站長爭奪戰》Episode 1《新人報到》
 
-HKDSE ICT 中四試算表團隊競賽網頁應用程式，設計為**雲端託管**（Render + PostgreSQL）：老師及學生在學校電腦用瀏覽器開啟網址即可，不需要安裝軟件或老師電腦一直開著。全班 6 隊（可設 4–7 隊），5 關，45 分鐘。學生在**真實的 Google Sheets** 輸入公式，網站負責中文劇情、倒數、提示、提交、**伺服器端公式批改**、計分、排行榜、教師控制及廣東話配音字幕。
+HKDSE ICT 中四試算表團隊競賽網頁應用程式，設計為**免費雲端託管**（Render Free + Neon Free PostgreSQL）：老師及學生在學校電腦用瀏覽器開啟網址即可，不需要安裝軟件或老師電腦一直開著。全班 6 隊（可設 4–7 隊），5 關，45 分鐘。學生在**真實的 Google Sheets** 輸入公式，網站負責中文劇情、倒數、提示、提交、**伺服器端公式批改**、計分、排行榜、教師控制及廣東話配音字幕。
 
 > 未設定 Google 憑證之前，可以用清楚標示的 **Demo 模擬模式** 完整試玩。Demo 模式的工作表是伺服器模擬，畫面上一律標示「模擬」，**不會**聲稱已接通 Google Sheets。
 
 ## 雲端部署（正式使用）
 
-請按 **[docs/DEPLOY_CLOUD.md](docs/DEPLOY_CLOUD.md)**：全部在 GitHub 及 Render 網頁完成，不需要終端機。
+請按 **[docs/DEPLOY_CLOUD.md](docs/DEPLOY_CLOUD.md)**：全部在 Neon 及 Render 網頁完成，不需要終端機，費用 US$0。
 
 ## 本機開發（只供開發者）
 
@@ -39,7 +39,7 @@ npm start
 | 兩套聲音：劇情（只由指定投影畫面播放）＋ 學生遊戲音效（只在相關隊伍裝置） | ✅ 已實作並以多瀏覽器測試 |
 | 雲端資料庫（PostgreSQL）、重啟後資料保留、雲端資產（錄音、角色圖片） | ✅ 已實作並以真實 PostgreSQL 測試 |
 | 角色圖片上載（替換內建插圖） | ✅ 已實作（規格見 [docs/CHARACTER_ART.md](docs/CHARACTER_ART.md)） |
-| 實際雲端網址 | ⚙️ 需要你建立 GitHub 及 Render 帳戶（見 DEPLOY_CLOUD.md） |
+| 實際雲端網址 | ⚙️ 需要你建立 Neon 及 Render 免費帳戶（見 DEPLOY_CLOUD.md） |
 | Demo 模擬工作表 | ✅ 已實作（清楚標示為模擬） |
 | Google Sign-in | ⚙️ 已實作，**需要** `GOOGLE_CLIENT_ID`（見 [docs/SETUP_GOOGLE.md](docs/SETUP_GOOGLE.md)） |
 | 真實 Google Sheets（建立、保護、分享、讀取公式＋數值） | ⚙️ 已實作並以模擬 API 測試；**需要** Google 憑證，並須在你的學校帳戶執行 `npm run google:smoke` 作端到端驗證 |

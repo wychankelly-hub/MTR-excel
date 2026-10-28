@@ -361,6 +361,11 @@ export function startServer(port = config.port) {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
   const timer = setInterval(() => { if (db.ready) C.tick(); }, 500);
+  // Render 免費方案閒置 15 分鐘會休眠：比賽進行中（大堂至結果）每 10 分鐘經公開網址自我喚醒一次
+  const awake = process.env.RENDER_EXTERNAL_URL ? setInterval(() => {
+    const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED|RESULTS)/.test(c.status));
+    if (live) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
+  }, 10 * 60 * 1000) : null;
   init().then(() => {
     server.listen(port, () => {
       const f = features();
@@ -379,8 +384,9 @@ export function startServer(port = config.port) {
     console.error('✗ 無法連接資料庫，伺服器沒有啟動：', e.message);
     process.exitCode = 1;
     clearInterval(timer);
+    clearInterval(awake);
   });
-  server.stop = async () => { clearInterval(timer); server.closeAllConnections?.(); server.close(); await close(); };
+  server.stop = async () => { clearInterval(timer); clearInterval(awake); server.closeAllConnections?.(); server.close(); await close(); };
   if (!process.env.NODE_TEST_CONTEXT) {
     const shutdown = async () => { await server.stop().catch(() => {}); process.exit(0); };
     process.on('SIGINT', shutdown);
