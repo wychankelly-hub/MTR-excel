@@ -87,7 +87,7 @@ export function audit(comp, by, action, detail = {}) {
 }
 
 export function changed(comp, reason) {
-  save();
+  save(`competition:${comp.id}`);
   bus.emit('changed', comp.id, reason);
 }
 
@@ -545,6 +545,40 @@ export function pause(comp, by, reason = '老師暫停') {
   }
   audit(comp, by, 'PAUSE', { reason });
   changed(comp, 'pause');
+}
+
+/**
+ * 伺服器重新啟動後呼叫（雲端重新部署、當機、免費方案重新啟動）。
+ * 如有關卡正在進行，由「伺服器最後確認仍在運行」的時間起自動暫停：
+ * 中斷期間不計時，學生不會因伺服器離線而失去作答時間；老師確認學生已重新連線後按「繼續」。
+ */
+export function recoverAfterRestart(lastAliveAt, now = clock.now()) {
+  const recovered = [];
+  if (!lastAliveAt) return recovered;
+  const at = Math.min(lastAliveAt, now);
+  const gapS = Math.max(1, Math.round((now - at) / 1000));
+  for (const comp of Object.values(db.state.competitions)) {
+    if (comp.paused) continue; // 老師在中斷前已暫停：暫停時間照常計算，不需處理
+    const active = LEVELS.filter((lv) => comp.levels[lv.level]?.phase === 'active');
+    if (!active.length) continue;
+    comp.paused = true;
+    comp.pauseReason = `伺服器曾中斷約 ${gapS} 秒，系統已自動暫停並補回中斷期間的作答時間。請確認學生已重新連線，然後按「繼續」。`;
+    comp.prevStatus = comp.status;
+    comp.status = STATUS.PAUSED;
+    for (const lv of active) {
+      const l = comp.levels[lv.level];
+      if (!l.pauseStartedAt) l.pauseStartedAt = at;
+    }
+    audit(comp, null, 'AUTO_PAUSE_RECOVERY', { lastAliveAt: at, restartedAt: now, gapMs: now - at, levels: active.map((lv) => lv.level) });
+    changed(comp, 'pause');
+    recovered.push({ compId: comp.id, gapMs: now - at, levels: active.map((lv) => lv.level) });
+  }
+  return recovered;
+}
+
+/** 是否有關卡正在計時（需要寫入「伺服器仍在運行」紀錄） */
+export function anyLevelRunning() {
+  return Object.values(db.state.competitions).some((c) => !c.paused && LEVELS.some((lv) => c.levels[lv.level]?.phase === 'active'));
 }
 
 export function resume(comp, by) {

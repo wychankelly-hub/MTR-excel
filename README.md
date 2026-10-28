@@ -6,7 +6,7 @@ HKDSE ICT 中四試算表團隊競賽網頁應用程式，設計為**免費雲�
 
 ## 雲端部署（正式使用）
 
-請按 **[docs/DEPLOY_CLOUD.md](docs/DEPLOY_CLOUD.md)**：全部在 Neon 及 Render 網頁完成，不需要終端機，費用 US$0。
+請按 **[docs/DEPLOY_CLOUD.md](docs/DEPLOY_CLOUD.md)**：全部在 Neon、Render 及 cron-job.org 網頁完成，不需要終端機，費用 US$0，網站 24 小時可立即開啟。
 
 ## 本機開發（只供開發者）
 
@@ -38,6 +38,7 @@ npm start
 | 投影畫面、字幕、配音事件排隊、Spoiler Policy、播放控制 | ✅ 已實作 |
 | 兩套聲音：劇情（只由指定投影畫面播放）＋ 學生遊戲音效（只在相關隊伍裝置） | ✅ 已實作並以多瀏覽器測試 |
 | 雲端資料庫（PostgreSQL）、重啟後資料保留、雲端資產（錄音、角色圖片） | ✅ 已實作並以真實 PostgreSQL 測試 |
+| 雲端中斷保護（先寫入才回覆、強制終止後不遺失／不重複、計時自動暫停補回、新舊實例不互相覆蓋） | ✅ 已實作並以強制終止程序測試；⚙️ 需要在真實 Render＋Neon 再驗證一次 |
 | 角色圖片上載（替換內建插圖） | ✅ 已實作（規格見 [docs/CHARACTER_ART.md](docs/CHARACTER_ART.md)） |
 | 實際雲端網址 | ⚙️ 需要你建立 Neon 及 Render 免費帳戶（見 DEPLOY_CLOUD.md） |
 | Demo 模擬工作表 | ✅ 已實作（清楚標示為模擬） |
@@ -52,7 +53,7 @@ npm start
 | 指令 | 用途 |
 |-|-|
 | `npm start` | 啟動伺服器 |
-| `npm test` | 驗收測試（57 項，涵蓋規格 §13 第 1–45 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性） |
+| `npm test` | 驗收測試（58 項，涵蓋規格 §13 第 1–45 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性及重新啟動可靠性） |
 | `npm run test:e2e` | 瀏覽器端到端測試（需要 Playwright + Chromium） |
 | `npm run demo:bots` | 六隊加速課堂模擬及壓力測試 |
 | `npm run preflight:report -- SEED 6` | 命令列 Preflight 報告 |

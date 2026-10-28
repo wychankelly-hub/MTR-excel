@@ -5,12 +5,13 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { config, features, ROOT } from './config.js';
 import http from 'node:http';
-import { db, init, save, close, getAsset, storageInfo, listAssets, putAsset, deleteAsset } from './store.js';
+import { db, init, save, close, getAsset, storageInfo, listAssets, putAsset, deleteAsset, persistNow, heartbeat } from './store.js';
 import {
   HttpError, currentUser, requireUser, requireTeacher, requireStudent, createSession, destroySession,
   loginWithGoogle, loginDemo, publicUser,
 } from './auth.js';
 import * as C from './competition.js';
+import { clock } from './clock.js';
 import { submitTask } from './submission.js';
 import { publicView, studentView, teacherView, resultsCsv, toCsv } from './views.js';
 import { addClient, clientCount } from './realtime.js';
@@ -48,7 +49,27 @@ export function createApp() {
   });
 
   // 雲端平台健康檢查
-  app.get('/healthz', (req, res) => res.status(db.ready ? 200 : 503).json({ ok: db.ready, storage: storageInfo() }));
+  app.get('/healthz', (req, res) => {
+    const ok = db.ready && !db.fenced;
+    res.status(ok ? 200 : 503).json({ ok, storage: storageInfo() });
+  });
+
+  // 會改變資料的請求（提交答案、提示、老師操作、工作表作答等）：先確認已寫入資料庫才回覆。
+  // 伺服器即使在回覆後立即當機或重新啟動，已回覆的結果亦不會遺失；
+  // 未能寫入時回覆 503，學生端會以同一 Idempotency Key 自動重試（不會重複計分）。
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') return next();
+    const send = res.json.bind(res);
+    res.json = (body) => {
+      persistNow().catch(() => false).then((ok) => {
+        if (ok || res.statusCode >= 400) return send(body);
+        res.status(503);
+        return send({ error: '伺服器暫時未能儲存資料，系統會自動重試（不會扣分，也不會重複計分）。', code: 'NOT_SAVED' });
+      });
+      return res;
+    };
+    next();
+  });
 
   const api = express.Router();
   app.use('/api', api);
@@ -360,13 +381,25 @@ export function startServer(port = config.port) {
   // SSE 連線長時間保持；雲端負載平衡器通常 60 秒以上才逾時，keep-alive 每 20 秒一次
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
-  const timer = setInterval(() => { if (db.ready) C.tick(); }, 500);
+  let recovered = false;
+  const timer = setInterval(() => { if (recovered && !db.fenced) C.tick(); }, 500);
+  // 比賽計時中每 5 秒記錄「伺服器仍在運行」（很小的紀錄）；另每分鐘完整檢查一次有否未寫入的改變
+  let beats = 0;
+  const alive = setInterval(() => {
+    if (!recovered || db.fenced) return;
+    if (C.anyLevelRunning()) heartbeat(clock.now());
+    if (++beats % 12 === 0) save();
+  }, 5000);
   // Render 免費方案閒置 15 分鐘會休眠：比賽進行中（大堂至結果）每 10 分鐘經公開網址自我喚醒一次
   const awake = process.env.RENDER_EXTERNAL_URL ? setInterval(() => {
     const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED|RESULTS)/.test(c.status));
     if (live) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
   }, 10 * 60 * 1000) : null;
   init().then(() => {
+    for (const r of C.recoverAfterRestart(db.lastAliveAt)) {
+      console.log(`⏸ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關已自動暫停（中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回）`);
+    }
+    recovered = true;
     server.listen(port, () => {
       const f = features();
       console.log(`\n${SERIES_TITLE} ${EPISODE_TITLE}`);
@@ -384,9 +417,10 @@ export function startServer(port = config.port) {
     console.error('✗ 無法連接資料庫，伺服器沒有啟動：', e.message);
     process.exitCode = 1;
     clearInterval(timer);
+    clearInterval(alive);
     clearInterval(awake);
   });
-  server.stop = async () => { clearInterval(timer); clearInterval(awake); server.closeAllConnections?.(); server.close(); await close(); };
+  server.stop = async () => { clearInterval(timer); clearInterval(alive); clearInterval(awake); server.closeAllConnections?.(); server.close(); await close(); };
   if (!process.env.NODE_TEST_CONTEXT) {
     const shutdown = async () => { await server.stop().catch(() => {}); process.exit(0); };
     process.on('SIGINT', shutdown);

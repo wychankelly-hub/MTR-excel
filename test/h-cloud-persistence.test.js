@@ -11,12 +11,17 @@ import pg from 'pg';
 const DB = process.env.TEST_DATABASE_URL;
 const ROOT = path.resolve(import.meta.dirname, '..');
 
+const children = new Set();
+test.after(() => { for (const ch of children) ch.kill('SIGKILL'); });
+
 function startServer(port) {
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: ROOT,
     env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: DB, PORT: String(port), DEMO_TEACHER_PIN: 'cloud-pin-8899', SESSION_SECRET: 'fixed-secret-for-test', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  children.add(child);
+  child.on('exit', () => children.delete(child));
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { out += d; });
@@ -87,6 +92,8 @@ test('雲端資料庫：伺服器重啟／重新部署／當機後，比賽進�
   assert.equal(after.status, 200, '老師 session 在重啟後仍然有效');
   assert.equal(after.body.scores.find((x) => x.teamId === 't3').total, scoreBefore, '分數保留');
   assert.equal(after.body.teams.find((t) => t.id === 't3').members.length, 1, '隊伍成員保留');
+  assert.equal(after.body.paused, true, '關卡進行中重新啟動：自動暫停並補回中斷時間');
+  assert.equal((await T('POST', `/api/teacher/competitions/${id}/resume`)).status, 200);
   const st = await S('GET', '/api/student/state');
   assert.equal(st.status, 200, '學生 session 保留');
   assert.equal(st.body.levelDetails[0].tasks[0].best, 2, '學生已核實的分數保留');
@@ -106,8 +113,7 @@ test('雲端資料庫：伺服器重啟／重新部署／當機後，比賽進�
   await S('POST', '/api/student/demo-sheet/L1_Fare/edit', { edits: [{ addr: 'F2', input: '=E2-D2' }] });
   const sub2 = await S('POST', '/api/student/submit', { taskId: 'L1-T2', idempotencyKey: 'cloud-key-0002' });
   assert.equal(sub2.body.status, 'REJECTED');
-  await new Promise((r) => setTimeout(r, 1200)); // 寫入延遲最多約 0.2 秒
-  s2.child.kill('SIGKILL');
+  s2.child.kill('SIGKILL'); // 收到回覆後立即終止：回覆前已寫入資料庫
   await new Promise((r) => s2.child.on('exit', r));
   const s3 = startServer(port);
   await s3.ready;

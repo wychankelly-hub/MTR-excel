@@ -138,7 +138,7 @@ export class DemoAdapter {
       if (v !== null && v !== undefined && v !== '') out[a] = v;
     }
     stored(comp, team)[sheetName] = out;
-    save();
+    save(`demoSheets:${comp.id}`);
   }
 
   /** 提交時讀取快照：公式字串 + 計算後數值 */

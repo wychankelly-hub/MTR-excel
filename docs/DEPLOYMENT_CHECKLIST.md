@@ -4,7 +4,11 @@
 - [ ] 按 [DEPLOY_CLOUD.md](DEPLOY_CLOUD.md) 建立 Neon Free 資料庫（Singapore），複製 Connection string
 - [ ] 以 Render Blueprint 建立 Free Web Service；填寫 `DATABASE_URL`（Neon）及 `DEMO_TEACHER_PIN`（至少 8 字元）；`SESSION_SECRET` 由 Blueprint 自動產生
 - [ ] 開啟 `https://你的網址/healthz` 顯示 `"driver":"postgres"`
-- [ ] 每次上課前 5 分鐘先開啟網址喚醒伺服器（免費方案會休眠）
+- [ ] cron-job.org：每 10 分鐘 GET `https://你的網址/healthz`，24 小時、每日；已開啟失敗電郵通知；History 顯示 200
+- [ ] 該 Render Workspace 只有這一個免費網站；沒有開啟 Preview Environments
+- [ ] 每月約 25 日在 Render → Billing 查看 Free instance hours（31 日月份需 744 小時，上限 750）
+- [ ] 首次部署後：在 Render 按「Restart service」，確認進行中的關卡自動暫停、時間補回、分數保留（DEPLOY_CLOUD.md「首次部署後請做一次驗證」）
+- [ ] 課堂中不推送程式碼到 GitHub
 - [ ] 學校電腦可開啟網址（如被封鎖，請 IT 容許 `*.onrender.com` 或設定自訂網址）
 - [ ] 投影電腦按一次「啟用投影聲音」後，開始遊戲有配音及背景音樂；學生裝置有遊戲音效
 

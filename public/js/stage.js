@@ -69,6 +69,7 @@ export function createAudioDevice({ role, stage, report, onSfx, onState }) {
   let isOutput = false;
   let designated = null;
   let lastSeq = null;
+  let compId = null;
   let lastTick = null;
   let claim = false;
   const player = new VoicePlayer({
@@ -102,7 +103,8 @@ export function createAudioDevice({ role, stage, report, onSfx, onState }) {
       isOutput = role === 'projector' && !!deviceId && designated === deviceId;
       player.setActive(isOutput);
       if (!!st.audio?.bgm !== player.bgmWanted) player.setBgmWanted(!!st.audio?.bgm);
-      if (lastSeq === null) lastSeq = st.audioSeq; // 只播放開啟後的新事件
+      // 只播放開啟後的新事件；切換到另一場比賽時重新計算（每場比賽的序號由 1 開始）
+      if (lastSeq === null || st.id !== compId) { lastSeq = st.audioSeq; compId = st.id; }
       onState?.({ enabled: player.enabled, muted: player.muted, designated, deviceId }, isOutput);
     },
     onAudio(msg) {

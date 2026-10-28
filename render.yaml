@@ -6,7 +6,7 @@ services:
   - type: web
     name: taiyau-station
     runtime: node
-    plan: free               # 免費：閒置 15 分鐘後休眠，再開啟約需 1 分鐘喚醒；比賽進行中會自動保持喚醒
+    plan: free               # 免費：閒置 15 分鐘會休眠；以 cron-job.org 每 10 分鐘開啟 /healthz 保持 24 小時喚醒（DEPLOY_CLOUD.md 步驟 5）
     region: singapore        # 最接近香港的 Render 地區
     numInstances: 1          # 遊戲狀態及即時推送設計為單一實例
     buildCommand: npm ci --omit=optional

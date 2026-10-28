@@ -60,6 +60,12 @@ test/              驗收測試（a–g）及瀏覽器 E2E
 | AudioEvent | `episode1/dialogue.js` + `competition.audio.log` |
 | TeacherAuditLog | `competition.audit[]` |
 
+## 持久化及重新啟動
+- `server/store.js`：PostgreSQL（`ty_kv` 鍵值表、`ty_assets` 檔案表）或本機檔案。比賽紀錄分成 `competition:<id>`（核心）、`competition:<id>:sub:<n>`（每 25 個提交）、`competition:<id>:audit:<n>`（每 100 項審計），只寫入有改變的鍵；投影畫面即時狀態不寫入。
+- 會改變資料的 API 在回覆前呼叫 `persistNow()`；未能寫入回覆 503 `NOT_SAVED`，學生端以同一 Idempotency Key 重試。
+- `owner` 鍵記錄目前負責的實例；寫入交易以 `SELECT … FOR UPDATE` 核對，舊實例被拒絕（`db.fenced`）。
+- 比賽計時中每 5 秒寫入 `heartbeat`；啟動時 `recoverAfterRestart()` 由最後一次 heartbeat 起暫停進行中的關卡。
+
 ## 狀態機
 `DRAFT → PREFLIGHT → APPROVED → LOBBY → RUNNING_LEVEL_1…5 → RESULTS → ARCHIVED`，另有 `PAUSED`（保留 prevStatus）及 `CANCELLED`。
 提交：`SUBMITTING → RECEIVED → VALIDATING → VERIFIED / REJECTED / RETRYABLE_ERROR`，另有 `INTEGRITY_ERROR`、`DUPLICATE`。

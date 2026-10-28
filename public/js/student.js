@@ -285,13 +285,20 @@ async function submit(taskId) {
   const key = uuid();
   const lvBefore = currentLevel();
   let result = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // 網絡中斷或伺服器重新啟動（雲端平台回覆 502／503／504，約需 1 分鐘）：
+  // 以同一 Idempotency Key 自動重試約 3 分鐘 —— 已收到的答案不會重複計分，未收到的會補交
+  const waits = [1, 2, 3, 5, 5, 10, 10, 15, 15, 15, 15, 15, 15, 15, 15, 15];
+  for (let attempt = 0; ; attempt++) {
     try {
       result = await api('POST', '/student/submit', { taskId, idempotencyKey: key });
       break;
     } catch (e) {
-      // 網絡中斷：使用同一 Idempotency Key 重試，不會重複計分
-      if (!e.status && attempt < 2) { await new Promise((r) => setTimeout(r, 1000 * (attempt + 1))); continue; }
+      const retryable = !e.status || [502, 503, 504].includes(e.status);
+      if (retryable && attempt < waits.length) {
+        if (attempt === 1) toast('伺服器重新連線中，正在自動重試提交…（答案不會遺失或重複計分）', 'info', 8000);
+        await new Promise((r) => setTimeout(r, waits[attempt] * 1000));
+        continue;
+      }
       toast(e.message, 'error', 6000);
       break;
     }
