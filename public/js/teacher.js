@@ -155,6 +155,9 @@ function viewSetup() {
     adapter: h('select', { disabled: !isNew },
       h('option', { value: 'demo', selected: !comp || comp.adapter === 'demo' }, 'Demo 模擬工作表（不需要 Google 設定）'),
       h('option', { value: 'google', selected: comp?.adapter === 'google', disabled: me.provider === 'demo' }, `真實 Google Sheets${me.provider === 'demo' ? '（需以 Google 登入）' : googleReady ? '' : '（Google 尚未連接）'}`)),
+    teamSelection: h('select', h('option', { value: 'teacher', selected: !s || s.teamSelection === 'teacher' }, '老師分隊（建議）'), h('option', { value: 'student', selected: s?.teamSelection === 'student' }, '學生加入時自選一次')),
+    requireGoogle: h('input', { type: 'checkbox', checked: !!s?.requireGoogle }),
+    allowed: h('textarea', { rows: 3, style: { width: '100%' }, placeholder: '（可選）只容許這些學校網域或電郵加入，例如 school.edu.hk 或 s1234@school.edu.hk；以逗號或換行分隔', value: [...(s?.allowedDomains || []), ...(s?.allowedEmails || [])].join('\n') }),
     bonus: h('input', { type: 'checkbox', checked: !!s?.bonusEnabled }),
     captain: h('input', { type: 'checkbox', checked: !!s?.captainOnlySubmit }),
   };
@@ -168,6 +171,10 @@ function viewSetup() {
     adapter: f.adapter.value,
     bonusEnabled: f.bonus.checked,
     captainOnlySubmit: f.captain.checked,
+    teamSelection: f.teamSelection.value,
+    requireGoogle: f.requireGoogle.checked,
+    allowedDomains: f.allowed.value.split(/[\s,;]+/).filter((x) => x && !x.includes('@')),
+    allowedEmails: f.allowed.value.split(/[\s,;]+/).filter((x) => x.includes('@')),
     levelSeconds: Object.fromEntries(cfg.levels.map((l, i) => [l.level, Math.round(Number(times[i].value) * 60)])),
     taughtSkills: skillBoxes.map((l) => l.querySelector('input')).filter((x) => x.checked).map((x) => x.value),
   });
@@ -183,6 +190,9 @@ function viewSetup() {
         h('div', h('strong', '每關時間（分鐘）'), h('div.row', cfg.levels.map((l, i) => h('label', `L${l.level}`, times[i])))),
         h('label', f.bonus, '開啟 Bonus 加題（L1 MIN，+50；所有隊伍相同機會）'),
         h('label', f.captain, '只容許隊長（Captain）提交'),
+        h('div', h('strong', '班別及分隊（防止學生進入錯誤班別或隊伍）'),
+          h('div.row', h('label', '分隊方式', f.teamSelection), h('label', f.requireGoogle, '學生必須以 Google 帳戶登入')),
+          h('label', { style: { display: 'block' } }, '學生名單（網域或電郵）', f.allowed)),
         h('div.row',
           isNew ? h('button.primary', { type: 'button', onclick: async () => {
             try {
@@ -206,17 +216,42 @@ const DEFAULT_SKILLS = ['SUM', 'AVERAGE', 'COUNT', 'MAX', 'MIN', 'IF', 'AND', 'O
 // ======================================================================= B. 隊伍
 function projectorUrl() { return `${location.origin}/projector?comp=${comp.id}&key=${comp.projectorKey}`; }
 
+function rosterCard() {
+  const waiting = comp.waiting || [];
+  const others = comps.filter((c) => c.id !== comp.id);
+  const srcSel = h('select', h('option', { value: '' }, '由另一場比賽複製隊伍名單…'), others.map((c) => h('option', { value: c.id }, `${c.classCode ? `${c.classCode}・` : ''}${c.title}`)));
+  return h('div.card', { style: { marginTop: '14px' } },
+    h('div.row',
+      h('h3', { style: { margin: 0 } }, `等候分隊（${waiting.length} 人）`),
+      h(`span.pill.${comp.settings.teamSelection === 'teacher' ? 'info' : ''}`, comp.settings.teamSelection === 'teacher' ? '老師分隊' : '學生自選一次（之後只有老師可轉隊）'),
+      h('div.right.row',
+        h('button.small', { type: 'button', onclick: () => act(() => api('PATCH', `/teacher/competitions/${compId}`, { teamSelection: comp.settings.teamSelection === 'teacher' ? 'student' : 'teacher' }), '已更改分隊方式') }, comp.settings.teamSelection === 'teacher' ? '改為學生自選' : '改為老師分隊'),
+        h('button.small.primary', { type: 'button', disabled: !waiting.length, onclick: () => act(() => post('/auto-assign'), '已自動平均分隊') }, '⚖ 自動平均分隊'))),
+    waiting.length ? h('table', h('thead', h('tr', h('th', '學生'), h('th', '分到'), h('th', ''))), h('tbody', waiting.map((m) => h('tr',
+      h('td', m.name, m.email ? h('div.muted', m.email) : null),
+      h('td', h('select', { onchange: (e) => { if (e.target.value) act(() => post('/assign', { userId: m.id, teamId: e.target.value }), '已分隊'); } }, h('option', { value: '' }, '選擇隊伍…'), comp.teams.map((t) => h('option', { value: t.id }, `${t.name}（${t.members.length} 人）`)))),
+      h('td', h('button.small.ghost', { type: 'button', onclick: () => removeStudent(m) }, '移除')))))) : h('p.muted', comp.settings.teamSelection === 'teacher' ? '學生輸入比賽代碼後會出現在這裏。' : '學生加入時自選隊伍。'),
+    others.length ? h('div.row', { style: { marginTop: '8px' } }, srcSel, h('button.small', { type: 'button', onclick: () => { if (srcSel.value) act(() => post('/copy-roster', { sourceId: srcSel.value }), '已複製隊伍名單'); } }, '複製名單')) : null);
+}
+
+function removeStudent(m) {
+  const reason = prompt(`把 ${m.name} 移出這場比賽？（例如加入錯班）\n原因（會寫入審計紀錄）：`, '加入錯班');
+  if (reason) act(() => post('/remove-student', { userId: m.id, reason }), '已移除');
+}
+
 function viewTeams() {
   const members = comp.teams.flatMap((t) => t.members.map((m) => ({ ...m, teamId: t.id })));
   return h('div',
     h('div.card', h('div.row',
       h('div', h('div.muted', '學生比賽代碼（Join Code）'), h('div.big-code', comp.joinCode)),
       h('div', h('div.muted', '學生網址'), h('code', `${location.origin}/student`)),
+      h('div', h('div.muted', '班別'), h('div', { style: { fontWeight: 900, fontSize: '1.4rem' } }, comp.classCode || '—')),
       h('div.right.col', h('a.btn', { href: projectorUrl(), target: '_blank', rel: 'noopener' }, '開啟投影畫面 ↗'), h('small.muted', `已連線：老師 ${comp.clients?.teacher ?? 0}・學生 ${comp.clients?.student ?? 0}・投影 ${comp.clients?.projector ?? 0}`)))),
+    rosterCard(),
     h('div.grid2', { style: { marginTop: '14px' } }, comp.teams.map((t) => h('div.card.team-card', { style: { '--c': t.color } },
       h('div.row', h('span.dot', { style: { background: t.color } }), h('h3', { style: { margin: 0 } }, `${t.name}（${t.code}）`), h('span.pill.right', `${t.members.length} 人`)),
       workbookLine(t),
-      t.members.length ? h('table', h('thead', h('tr', h('th', '成員'), h('th', '隊長'), h('th', '轉隊'))), h('tbody', t.members.map((m) => h('tr',
+      t.members.length ? h('table', h('thead', h('tr', h('th', '成員'), h('th', '隊長'), h('th', '轉隊'), h('th', ''))), h('tbody', t.members.map((m) => h('tr',
         h('td', m.name, m.email ? h('div.muted', m.email) : h('div.muted', m.provider === 'demo' ? 'Demo 帳戶' : '')),
         h('td', h('input', { type: 'radio', name: `cap-${t.id}`, checked: t.captainId === m.id, onchange: () => act(() => api('PATCH', `/teacher/competitions/${compId}`, { teams: [{ id: t.id, captainId: m.id }] }), '已設定隊長') })),
         h('td', h('select', { onchange: async (e) => {
@@ -224,7 +259,8 @@ function viewTeams() {
           const reason = prompt('轉隊原因（會寫入審計紀錄）：', '學生加入錯誤隊伍');
           if (!reason) { e.target.value = ''; return; }
           await act(() => post('/transfer', { userId: m.id, toTeamId: to, reason }), '已轉隊');
-        } }, h('option', { value: '' }, '轉至…'), comp.teams.filter((x) => x.id !== t.id).map((x) => h('option', { value: x.id }, x.name)))))))) : h('p.muted', '尚未有成員。'),
+        } }, h('option', { value: '' }, '轉至…'), comp.teams.filter((x) => x.id !== t.id).map((x) => h('option', { value: x.id }, x.name)))),
+        h('td', h('button.small.ghost', { type: 'button', onclick: () => removeStudent(m) }, '移除')))))) : h('p.muted', '尚未有成員。'),
       t.members.length ? rolesTable(t) : null))),
     members.length ? null : h('p.muted', { style: { marginTop: '10px' } }, '建議分組：20 人可用四隊 3 人、兩隊 4 人；19 人可用五隊 3 人、一隊 4 人。'));
 }

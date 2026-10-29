@@ -5,6 +5,7 @@
 //   3. 重新部署時新舊兩個實例同時運行：舊實例不可再寫入（不會覆蓋新實例的資料）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { cookieJar } from './cookie-jar.js';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import pg from 'pg';
@@ -36,11 +37,10 @@ function startServer(port) {
 }
 
 function agent(base) {
-  let cookie = '';
+  const jar = cookieJar();
   return async (method, url, body) => {
-    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
-    const sc = r.headers.get('set-cookie');
-    if (sc) cookie = sc.split(';')[0];
+    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', cookie: jar.header() }, body: body === undefined ? undefined : JSON.stringify(body) });
+    jar.update(r);
     const text = await r.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* 非 JSON */ }

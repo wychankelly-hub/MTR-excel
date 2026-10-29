@@ -82,7 +82,15 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
       await S.click('#demo-student button');
       await S.waitForURL('**/student');
       await S.fill('.joincode', joinCode);
-      await S.click(`.teams-pick button:has-text("${teamName}")`);
+      // 老師分隊模式：學生確認班別後加入等候名單，由老師分隊
+      await S.click('.joinbox button.primary.big:has-text("加入")');
+      await S.waitForSelector('text=請等候老師把你分到隊伍');
+      await T.click('button:has-text("B. 隊伍")');
+      const row = T.locator('tr', { hasText: name }).filter({ has: T.locator('select') }).first();
+      await row.locator('select').selectOption({ label: new RegExp(`^${teamName}`) }).catch(async () => {
+        const opt = await row.locator('option', { hasText: teamName }).first().getAttribute('value');
+        await row.locator('select').selectOption(opt);
+      });
       await S.waitForSelector('text=等候老師開始');
       await S.click('body'); // 學生裝置一次性啟用音效
       return S;

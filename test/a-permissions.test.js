@@ -1,6 +1,7 @@
 // 驗收測試 A（1–5）：身份與權限（經 HTTP API 測試）
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cookieJar } from './cookie-jar.js';
 import './helpers.js';
 
 const { startServer } = await import('../server/index.js');
@@ -8,11 +9,10 @@ let srv;
 let base;
 
 function agent() {
-  let cookie = '';
+  const jar = cookieJar();
   return async (method, url, body) => {
-    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined });
-    const sc = r.headers.get('set-cookie');
-    if (sc) cookie = sc.split(';')[0];
+    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', cookie: jar.header() }, body: body ? JSON.stringify(body) : undefined });
+    jar.update(r);
     return { status: r.status, body: await r.json().catch(() => null) };
   };
 }

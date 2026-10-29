@@ -57,7 +57,16 @@ export function publicView(comp) {
   };
 }
 
-function nameOf(id) { return db.state.users[id]?.name || '—'; }
+function nameOf(id) {
+  const u = db.state.users[id];
+  if (!u) return '—';
+  return u.guestTag ? `${u.name}（訪客 #${u.guestTag}）` : u.name;
+}
+
+function personOf(id) {
+  const u = db.state.users[id];
+  return { id, name: nameOf(id), email: u?.email || null, provider: u?.provider };
+}
 
 function reviewForLevel(lv) {
   const codes = Object.keys(REVIEW_CARDS).filter((c) => reviewCodeLevel(c) === lv.level);
@@ -77,7 +86,7 @@ const reviewCodeLevel = (c) => CODE_LEVEL[c];
 export function studentView(comp, user) {
   const pub = publicView(comp);
   const team = comp.teams.find((t) => t.memberIds.includes(user.id));
-  if (!team) return { ...pub, me: { id: user.id, name: user.name }, team: null };
+  if (!team) return { ...pub, me: { id: user.id, name: user.name }, team: null, waiting: (comp.waiting || []).includes(user.id) };
   const score = computeTeamScore(comp, team.id);
   const subs = comp.submissions.filter((s) => s.teamId === team.id);
   const cancelled = comp.cancelledTasks.map((c) => c.taskId);
@@ -182,10 +191,11 @@ export function teacherView(comp) {
     })),
     teams: comp.teams.map((t) => ({
       id: t.id, name: t.name, code: t.code, color: t.color, captainId: t.captainId,
-      members: t.memberIds.map((id) => ({ id, name: nameOf(id), email: db.state.users[id]?.email || null, provider: db.state.users[id]?.provider })),
+      members: t.memberIds.map(personOf),
       roles: Object.fromEntries(Object.entries(t.roles || {}).map(([lvl, r]) => [lvl, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v ? { id: v, name: nameOf(v) } : null]))])),
       workbook: t.workbook,
     })),
+    waiting: (comp.waiting || []).map(personOf),
     generation: comp.generation ? { ...comp.generation } : null,
     approval: comp.approval,
     scores: scores.map((s) => ({ ...s, levelsLines: Object.fromEntries(Object.values(s.levels).map((l) => [l.level, breakdownLines(l)])) })),

@@ -119,6 +119,8 @@ export function createCompetition(teacher, opts = {}) {
   const adapter = opts.adapter === 'google' ? 'google' : 'demo';
   if (adapter === 'google' && teacher.provider === 'demo') throw new HttpError(400, 'Demo 老師帳戶只可以建立 Demo 比賽；正式 Google Sheets 比賽需要以 Google 登入。');
   const id = `c_${randCode(10, 'abcdefghijkmnpqrstuvwxyz23456789')}`;
+  let joinCode = randCode(6);
+  while (Object.values(db.state.competitions).some((c) => c.joinCode === joinCode)) joinCode = randCode(6);
   const comp = {
     id,
     episode: EPISODE_ID,
@@ -126,7 +128,7 @@ export function createCompetition(teacher, opts = {}) {
     classCode: String(opts.classCode || '').replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20),
     adapter,
     demo: adapter === 'demo',
-    joinCode: randCode(6),
+    joinCode,
     projectorKey: randCode(16),
     ownerId: teacher.id,
     createdAt: clock.now(),
@@ -142,7 +144,14 @@ export function createCompetition(teacher, opts = {}) {
       bonusEnabled: !!opts.bonusEnabled,
       maxTeamSize: 5,
       captainOnlySubmit: !!opts.captainOnlySubmit,
+      // 分隊：'teacher' = 學生加入後由老師分隊；'student' = 學生加入時自選一次（之後只有老師可以轉隊）
+      teamSelection: opts.teamSelection === 'teacher' ? 'teacher' : 'student',
+      // 只容許名單內的 Google 帳戶／網域加入（留空 = 不限制）
+      allowedEmails: cleanEmails(opts.allowedEmails),
+      allowedDomains: cleanDomains(opts.allowedDomains),
+      requireGoogle: !!opts.requireGoogle,
     },
+    waiting: [], // 已加入比賽、等候老師分隊的學生
     teams: makeTeams(teamCount),
     generation: null,
     approval: null,
@@ -165,6 +174,16 @@ export function createCompetition(teacher, opts = {}) {
   audit(comp, teacher, 'CREATE', { teamCount, adapter });
   changed(comp, 'create');
   return comp;
+}
+
+function cleanEmails(v) {
+  const list = Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/);
+  return [...new Set(list.map((x) => String(x).trim().toLowerCase()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))].slice(0, 300);
+}
+
+function cleanDomains(v) {
+  const list = Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/);
+  return [...new Set(list.map((x) => String(x).trim().toLowerCase().replace(/^@/, '')).filter((x) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(x)))].slice(0, 20);
 }
 
 function requireOwner(comp, teacher) {
@@ -198,6 +217,10 @@ export function updateSettings(comp, teacher, patch) {
     s.bonusEnabled = !!patch.bonusEnabled;
   }
   if (patch.captainOnlySubmit !== undefined) s.captainOnlySubmit = !!patch.captainOnlySubmit;
+  if (patch.teamSelection !== undefined) s.teamSelection = patch.teamSelection === 'teacher' ? 'teacher' : 'student';
+  if (patch.allowedEmails !== undefined) s.allowedEmails = cleanEmails(patch.allowedEmails);
+  if (patch.allowedDomains !== undefined) s.allowedDomains = cleanDomains(patch.allowedDomains);
+  if (patch.requireGoogle !== undefined) s.requireGoogle = !!patch.requireGoogle;
   if (patch.title) comp.title = String(patch.title).slice(0, 80);
   if (Array.isArray(patch.teams)) {
     for (const p of patch.teams) {
@@ -357,21 +380,59 @@ export function openLobby(comp, teacher) {
 }
 
 // ------------------------------------------------------------------ B. Teams
+/** 學生可否加入此比賽（班別名單、Google 帳戶要求）；伺服器端檢查，不能由網址或參數繞過 */
+export function checkJoinAllowed(comp, user) {
+  const s = comp.settings;
+  if (comp.adapter === 'google' && user.provider !== 'google') throw new HttpError(403, '此比賽使用 Google Sheets，請以 Google 帳戶登入。', 'GOOGLE_LOGIN_REQUIRED');
+  if (s.requireGoogle && user.provider !== 'google') throw new HttpError(403, '此比賽只接受學校 Google 帳戶登入，請登出後以 Google 登入。', 'GOOGLE_LOGIN_REQUIRED');
+  const email = (user.email || '').toLowerCase();
+  const listed = (s.allowedEmails || []).length || (s.allowedDomains || []).length;
+  if (listed) {
+    const okEmail = email && (s.allowedEmails || []).includes(email);
+    const okDomain = email && (s.allowedDomains || []).includes(email.split('@')[1]);
+    if (!okEmail && !okDomain) throw new HttpError(403, `你的帳戶不在「${comp.classCode || comp.title}」的學生名單內。請確認比賽代碼是否屬於你的班別，或通知老師。`, 'NOT_ON_ROSTER');
+  }
+}
+
+export function isMember(comp, userId) {
+  return !!teamOfUser(comp, userId) || (comp.waiting || []).includes(userId);
+}
+
+/**
+ * 學生以比賽代碼加入。
+ * - teamSelection = 'teacher'：加入等候名單，由老師分隊（teamId 會被忽略）。
+ * - teamSelection = 'student'：學生自選一次；已有隊伍後只有老師可以轉隊。
+ */
 export async function joinTeam(user, joinCode, teamId) {
   const comp = findByJoinCode(joinCode);
-  if (comp.adapter === 'google' && user.provider !== 'google') throw new HttpError(403, '此比賽使用真實 Google Sheets，請以 Google 帳戶登入。', 'GOOGLE_LOGIN_REQUIRED');
-  if (comp.adapter === 'demo' && user.provider !== 'demo' && !comp.demo) throw new HttpError(403, '帳戶類型不符。');
+  checkJoinAllowed(comp, user);
   const existing = teamOfUser(comp, user.id);
   if (existing) {
-    if (existing.id === teamId || !teamId) return { comp, team: existing };
+    if (existing.id === teamId || !teamId || comp.settings.teamSelection === 'teacher') return { comp, team: existing };
     throw new HttpError(409, `你已加入「${existing.name}」。如需轉隊，請通知老師。`, 'ALREADY_IN_TEAM');
+  }
+  comp.waiting ??= [];
+  if (comp.settings.teamSelection === 'teacher' || !teamId) {
+    if (!comp.waiting.includes(user.id)) {
+      comp.waiting.push(user.id);
+      audit(comp, user, 'JOIN_WAITING', {});
+      changed(comp, 'join');
+    }
+    return { comp, team: null };
   }
   const team = getTeam(comp, teamId);
   if (team.memberIds.length >= comp.settings.maxTeamSize) throw new HttpError(409, '此隊已滿，請選擇其他隊伍或通知老師。', 'TEAM_FULL');
+  await addMember(comp, team, user);
+  audit(comp, user, 'JOIN_TEAM', { teamId });
+  changed(comp, 'join');
+  return { comp, team };
+}
+
+async function addMember(comp, team, user) {
+  comp.waiting = (comp.waiting || []).filter((x) => x !== user.id);
   team.memberIds.push(user.id);
   if (!team.captainId) team.captainId = user.id;
   assignRoles(team);
-  audit(comp, user, 'JOIN_TEAM', { teamId });
   if (comp.adapter === 'google' && team.workbook?.status === 'READY' && user.email) {
     try {
       await adapters.google.share(team.workbook, user.email);
@@ -380,16 +441,92 @@ export async function joinTeam(user, joinCode, teamId) {
       team.workbook.shareError = `${user.name}：${e.message}`;
     }
   }
-  changed(comp, 'join');
-  return { comp, team };
+}
+
+/** 老師把等候中的學生分到某隊（或由一隊轉到另一隊） */
+export async function assignStudent(comp, teacher, userId, toTeamId) {
+  requireOwner(comp, teacher);
+  const user = db.state.users[userId];
+  if (!user || !isMember(comp, userId)) throw new HttpError(404, '此學生未加入這個比賽。');
+  const from = teamOfUser(comp, userId);
+  if (from) return transferStudent(comp, teacher, userId, toTeamId, '老師調動隊伍');
+  const to = getTeam(comp, toTeamId);
+  if (to.memberIds.length >= comp.settings.maxTeamSize) throw new HttpError(409, '目標隊伍已滿。');
+  await addMember(comp, to, user);
+  audit(comp, teacher, 'ASSIGN_STUDENT', { userId, to: to.id });
+  changed(comp, 'assign');
+}
+
+/** 自動平均分隊：等候中的學生按人數最少的隊伍依次分配 */
+export async function autoAssign(comp, teacher) {
+  requireOwner(comp, teacher);
+  const waiting = [...(comp.waiting || [])];
+  const placed = [];
+  for (const userId of waiting) {
+    const user = db.state.users[userId];
+    if (!user) continue;
+    const team = [...comp.teams].filter((t) => t.memberIds.length < comp.settings.maxTeamSize).sort((a, b) => a.memberIds.length - b.memberIds.length || a.index - b.index)[0];
+    if (!team) break;
+    await addMember(comp, team, user);
+    placed.push({ userId, teamId: team.id });
+  }
+  audit(comp, teacher, 'AUTO_ASSIGN', { placed });
+  changed(comp, 'assign');
+  return { placed: placed.length, remaining: (comp.waiting || []).length };
+}
+
+/** 老師把學生移出比賽（例如加入錯班）；已提交的紀錄保留 */
+export async function removeStudent(comp, teacher, userId, reason) {
+  requireOwner(comp, teacher);
+  if (!reason || String(reason).trim().length < 2) throw new HttpError(400, '移除學生需要註明原因。');
+  const from = teamOfUser(comp, userId);
+  if (from) {
+    from.memberIds = from.memberIds.filter((x) => x !== userId);
+    if (from.captainId === userId) from.captainId = from.memberIds[0] || null;
+    assignRoles(from);
+    const user = db.state.users[userId];
+    if (comp.adapter === 'google' && from.workbook?.fileId && user?.email) {
+      try { await adapters.google.unshare(from.workbook, user.email); } catch (e) { from.workbook.shareError = e.message; }
+    }
+  }
+  comp.waiting = (comp.waiting || []).filter((x) => x !== userId);
+  const user = db.state.users[userId];
+  if (user?.currentCompId === comp.id) { user.currentCompId = null; save(); }
+  audit(comp, teacher, 'REMOVE_STUDENT', { userId, from: from?.id || null, reason: String(reason).slice(0, 200) });
+  changed(comp, 'remove');
+}
+
+/** 由同一班另一場比賽（例如第一集）複製隊伍名單：同一隊號的成員放回同一隊 */
+export async function copyRoster(comp, teacher, sourceId) {
+  requireOwner(comp, teacher);
+  const src = getComp(sourceId);
+  requireOwner(src, teacher);
+  if (src.id === comp.id) throw new HttpError(400, '請選擇另一場比賽。');
+  let copied = 0;
+  for (const st of src.teams) {
+    const dt = comp.teams[st.index];
+    if (!dt) continue;
+    for (const userId of st.memberIds) {
+      const user = db.state.users[userId];
+      if (!user || teamOfUser(comp, userId)) continue;
+      if (dt.memberIds.length >= comp.settings.maxTeamSize) break;
+      await addMember(comp, dt, user);
+      copied++;
+    }
+    if (st.captainId && dt.memberIds.includes(st.captainId)) dt.captainId = st.captainId;
+  }
+  audit(comp, teacher, 'COPY_ROSTER', { from: src.id, copied });
+  changed(comp, 'assign');
+  return { copied };
 }
 
 export async function transferStudent(comp, teacher, userId, toTeamId, reason) {
   requireOwner(comp, teacher);
   if (!reason) throw new HttpError(400, '轉隊需要註明原因。');
   const from = teamOfUser(comp, userId);
+  if (!from) return assignStudent(comp, teacher, userId, toTeamId);
   const to = getTeam(comp, toTeamId);
-  if (from?.id === to.id) return;
+  if (from.id === to.id) return;
   if (to.memberIds.length >= comp.settings.maxTeamSize) throw new HttpError(409, '目標隊伍已滿。');
   const user = db.state.users[userId];
   if (from) {

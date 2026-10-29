@@ -8,7 +8,7 @@ import http from 'node:http';
 import { db, init, save, close, getAsset, storageInfo, listAssets, putAsset, deleteAsset, persistNow, heartbeat } from './store.js';
 import {
   HttpError, currentUser, requireUser, requireTeacher, requireStudent, createSession, destroySession,
-  loginWithGoogle, loginDemo, publicUser,
+  loginWithGoogle, loginDemo, publicUser, guestDeviceKey,
 } from './auth.js';
 import * as C from './competition.js';
 import { clock } from './clock.js';
@@ -98,7 +98,8 @@ export function createApp() {
     res.json({ user: publicUser(u) });
   });
   api.post('/auth/demo', (req, res) => {
-    const u = loginDemo(req.body || {});
+    const body = req.body || {};
+    const u = loginDemo({ ...body, deviceKey: body.role === 'student' ? guestDeviceKey(req, res) : null });
     createSession(res, u.id);
     res.json({ user: publicUser(u), demo: true });
   });
@@ -185,6 +186,10 @@ export function createApp() {
   api.post('/teacher/competitions/:id/leaderboard', (req, res) => { const { t, comp } = owned(req); C.setLeaderboard(comp, t, req.body || {}); res.json({ ok: true }); });
   api.post('/teacher/competitions/:id/audio/trigger', (req, res) => { const { t, comp } = owned(req); res.json(C.triggerAudio(comp, req.body?.eventId, { by: t })); });
   api.post('/teacher/competitions/:id/audio/control', (req, res) => { const { t, comp } = owned(req); C.audioControl(comp, t, req.body?.action, req.body?.value); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/assign', async (req, res) => { const { t, comp } = owned(req); await C.assignStudent(comp, t, String(req.body?.userId || ''), String(req.body?.teamId || '')); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/auto-assign', async (req, res) => { const { t, comp } = owned(req); res.json(await C.autoAssign(comp, t)); });
+  api.post('/teacher/competitions/:id/remove-student', async (req, res) => { const { t, comp } = owned(req); await C.removeStudent(comp, t, String(req.body?.userId || ''), req.body?.reason); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/copy-roster', async (req, res) => { const { t, comp } = owned(req); res.json(await C.copyRoster(comp, t, String(req.body?.sourceId || ''))); });
   api.post('/teacher/competitions/:id/transfer', async (req, res) => { const { t, comp } = owned(req); await C.transferStudent(comp, t, req.body?.userId, req.body?.toTeamId, req.body?.reason); res.json({ ok: true }); });
   api.post('/teacher/competitions/:id/roles', (req, res) => { const { t, comp } = owned(req); res.json(C.setRoles(comp, t, req.body?.teamId, Number(req.body?.level), req.body?.roles || {})); });
   api.post('/teacher/competitions/:id/adjust', (req, res) => { const { t, comp } = owned(req); res.json(C.adjustScore(comp, t, req.body?.teamId, req.body?.delta, req.body?.reason)); });
@@ -250,23 +255,31 @@ export function createApp() {
   });
 
   // ------------------------------------------------------------ 學生
+  // 學生的比賽及隊伍一律由伺服器按登入身份及隊伍名單決定；網址或參數中的隊伍／比賽編號都不會被採用
   const studentComp = (req) => {
     const u = requireStudent(req);
     const cc = u.currentCompId && db.state.competitions[u.currentCompId];
-    if (!cc || [C.STATUS.ARCHIVED, C.STATUS.CANCELLED].includes(cc.status)) throw new HttpError(404, '尚未加入比賽。', 'NOT_JOINED');
-    return { u, comp: db.state.competitions[u.currentCompId] };
+    if (!cc || [C.STATUS.ARCHIVED, C.STATUS.CANCELLED].includes(cc.status) || !C.isMember(cc, u.id)) throw new HttpError(404, '尚未加入比賽。', 'NOT_JOINED');
+    return { u, comp: cc };
   };
   api.post('/student/lookup', (req, res) => {
-    requireStudent(req);
+    const u = requireStudent(req);
     const comp = C.findByJoinCode(req.body?.joinCode);
-    res.json({ title: comp.title, demo: comp.adapter === 'demo', adapter: comp.adapter, teams: comp.teams.map((t) => ({ id: t.id, name: t.name, color: t.color, code: t.code, memberCount: t.memberIds.length, full: t.memberIds.length >= comp.settings.maxTeamSize })) });
+    C.checkJoinAllowed(comp, u);
+    const selfSelect = comp.settings.teamSelection !== 'teacher';
+    const mine = C.teamOfUser(comp, u.id);
+    res.json({
+      title: comp.title, classCode: comp.classCode, episode: comp.episode, adapter: comp.adapter, teamSelection: selfSelect ? 'student' : 'teacher',
+      myTeam: mine ? { id: mine.id, name: mine.name } : null,
+      teams: selfSelect ? comp.teams.map((t) => ({ id: t.id, name: t.name, color: t.color, code: t.code, memberCount: t.memberIds.length, full: t.memberIds.length >= comp.settings.maxTeamSize })) : [],
+    });
   });
   api.post('/student/join', async (req, res) => {
     const u = requireStudent(req);
     const { comp, team } = await C.joinTeam(u, req.body?.joinCode, req.body?.teamId);
     u.currentCompId = comp.id;
     save();
-    res.json({ compId: comp.id, teamId: team.id });
+    res.json({ compId: comp.id, teamId: team?.id || null, waiting: !team });
   });
   api.post('/student/leave', (req, res) => {
     const u = requireStudent(req);

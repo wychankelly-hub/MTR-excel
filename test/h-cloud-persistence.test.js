@@ -4,6 +4,7 @@
 // 亦測試強制終止（SIGKILL，模擬當機）後最近的提交仍然保存。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { cookieJar } from './cookie-jar.js';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import pg from 'pg';
@@ -34,12 +35,11 @@ function startServer(port) {
 }
 
 function agent(base) {
-  let cookie = '';
+  const jar = cookieJar();
   return async (method, url, body, headers = {}) => {
     const isBuf = Buffer.isBuffer(body);
-    const r = await fetch(base + url, { method, headers: { ...(isBuf ? {} : { 'content-type': 'application/json' }), cookie, ...headers }, body: body === undefined ? undefined : isBuf ? body : JSON.stringify(body) });
-    const sc = r.headers.get('set-cookie');
-    if (sc) cookie = sc.split(';')[0];
+    const r = await fetch(base + url, { method, headers: { ...(isBuf ? {} : { 'content-type': 'application/json' }), cookie: jar.header(), ...headers }, body: body === undefined ? undefined : isBuf ? body : JSON.stringify(body) });
+    jar.update(r);
     const text = await r.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* 非 JSON */ }

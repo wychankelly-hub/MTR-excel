@@ -74,23 +74,33 @@ function renderJoin() {
   $('routebar').hidden = true;
   const code = h('input.joincode', { maxlength: 6, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false, placeholder: 'ABC123', 'aria-label': '比賽代碼', inputmode: 'latin', pattern: '[A-Za-z0-9]{6}' });
   const teamsBox = h('div');
+  const join = async (teamId) => {
+    try {
+      await api('POST', '/student/join', { joinCode: code.value, teamId });
+      setState(await api('GET', '/student/state'));
+      connect();
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const lookup = async () => {
     try {
       const info = await api('POST', '/student/lookup', { joinCode: code.value });
+      const cls = info.classCode ? `${info.classCode} 班` : '';
       clear(teamsBox,
-        demoBanner(info.demo),
-        h('h2', { style: { marginTop: '16px' } }, `${info.title}：選擇你的路綫（隊伍）`),
-        h('div.teams-pick', info.teams.map((t) => h('button', {
-          type: 'button', style: { background: t.color }, disabled: t.full,
-          onclick: async () => {
-            try {
-              await api('POST', '/student/join', { joinCode: code.value, teamId: t.id });
-              setState(await api('GET', '/student/state'));
-              connect();
-            } catch (e) { toast(e.message, 'error'); }
-          },
-        }, h('span', t.name), h('small', { style: { opacity: .9, fontWeight: 500, color: '#fff' } }, `${t.code}・${t.memberCount} 人${t.full ? '（已滿）' : ''}`)))));
-    } catch (e) { toast(e.message, 'error'); }
+        h('div.notice.info', { style: { marginTop: '16px', fontSize: '1.1rem' } },
+          '你即將加入：', h('strong', ` ${cls}《${info.title}》`),
+          h('div', { style: { fontSize: '.92rem', marginTop: '4px' } }, '請確認這是你的班別及老師在投影幕顯示的比賽。如不是，請重新輸入代碼。')),
+        info.myTeam ? h('div.row', { style: { marginTop: '12px', justifyContent: 'center' } }, h('button.primary.big', { type: 'button', onclick: () => join(info.myTeam.id) }, `返回「${info.myTeam.name}」`))
+          : info.teamSelection === 'teacher'
+            ? h('div', { style: { textAlign: 'center', marginTop: '12px' } },
+              h('p', '這場比賽由老師分隊。加入後請等候老師把你分到隊伍。'),
+              h('button.primary.big', { type: 'button', onclick: () => join(null) }, `加入 ${cls}`.trim()))
+            : [h('h2', { style: { marginTop: '16px' } }, '選擇你的路綫（隊伍）'),
+              h('p.muted', '只可以選擇一次；如選錯，請通知老師轉隊。'),
+              h('div.teams-pick', info.teams.map((t) => h('button', {
+                type: 'button', style: { background: t.color }, disabled: t.full,
+                onclick: () => { if (confirm(`確定加入「${t.name}」？之後只有老師可以為你轉隊。`)) join(t.id); },
+              }, h('span', t.name), h('small', { style: { opacity: .9, fontWeight: 500, color: '#fff' } }, `${t.code}・${t.memberCount} 人${t.full ? '（已滿）' : ''}`))))]);
+    } catch (e) { clear(teamsBox); toast(e.message, 'error', 7000); }
   };
   code.addEventListener('input', () => { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); if (code.value.length === 6) lookup(); });
   clear($('main'), h('div.card.joinbox',
@@ -100,6 +110,17 @@ function renderJoin() {
     h('div.row', { style: { justifyContent: 'center' } }, code, h('button.primary.big', { type: 'button', onclick: lookup }, '下一步')),
     teamsBox));
   code.focus();
+}
+
+function renderWaiting() {
+  mode = 'waiting';
+  $('routebar').hidden = true;
+  clear($('team'), h('span.team-chip', { style: { background: '#5B6B7A' } }, state.classCode ? `${state.classCode} 班` : '已加入'));
+  clear($('main'), h('div.card.joinbox', { style: { textAlign: 'center' } },
+    h('div.welcome-cast', ['fatmaster', 'chanding', 'rocket', 'bat'].map((id) => new Character(id, { size: 96 }).el)),
+    h('h1', `已加入${state.classCode ? ` ${state.classCode} 班` : ''}《${state.title}》`),
+    h('p', { style: { fontSize: '1.15rem' } }, '請等候老師把你分到隊伍。分隊後畫面會自動更新。'),
+    h('p.muted', `你的名稱：${me.name}${me.guestTag ? `（訪客 #${me.guestTag}）` : ''}`)));
 }
 
 // ---------------------------------------------------------------- 主畫面
@@ -112,10 +133,11 @@ function render() {
   if (!state) return;
   $('title').textContent = state.title;
   clear($('banner'), demoBanner(state.demo), state.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0, textAlign: 'center', fontWeight: 800 } }, `⏸ 比賽暫停中：${state.pauseReason || ''}（暫停期間不計時）`) : null);
-  if (!state.team) { renderJoin(); return; }
+  if (!state.team) { if (state.waiting) renderWaiting(); else renderJoin(); return; }
+  if (mode === 'waiting' || mode === 'join') mode = null;
   const t = state.team;
   document.documentElement.style.setProperty('--line-color', t.color);
-  clear($('team'), h('span.team-chip', { style: { background: t.color } }, h('span.line-chip', { style: { background: 'rgba(0,0,0,.25)' } }, t.code), t.name));
+  clear($('team'), h('span.team-chip', { style: { background: t.color } }, state.classCode ? h('span.line-chip', { style: { background: 'rgba(0,0,0,.25)' } }, state.classCode) : null, h('span.line-chip', { style: { background: 'rgba(0,0,0,.25)' } }, t.code), t.name));
   $('score').textContent = state.score.total;
 
   // 新一關開始：列車開出動畫

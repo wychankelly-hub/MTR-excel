@@ -34,7 +34,7 @@ export function createSession(res, userId) {
   db.state.sessions[sid] = { userId, createdAt: Date.now() };
   save();
   const value = `${sid}.${sign(sid)}`;
-  res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${config.secureCookies ? '; Secure' : ''}`);
+  res.append('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${config.secureCookies ? '; Secure' : ''}`);
   return sid;
 }
 
@@ -114,7 +114,12 @@ export async function loginWithGoogle(credential) {
   });
 }
 
-export function loginDemo({ role, name, pin }) {
+/**
+ * 訪客（Demo）學生身份。deviceKey 是存在該瀏覽器的隨機識別碼：
+ * 不同電腦輸入相同英文名稱會成為不同的學生，不能冒認同學（舊版本只以名稱識別）。
+ * 沒有 deviceKey（只在測試／命令列工具）時沿用以名稱識別。
+ */
+export function loginDemo({ role, name, pin, deviceKey }) {
   if (!config.allowDemoLogin) throw new HttpError(403, '此伺服器已停用 Demo 登入。', 'DEMO_DISABLED');
   if (role === 'teacher') {
     if (!config.demoTeacherPin) throw new HttpError(403, '此伺服器未設定老師登入碼（DEMO_TEACHER_PIN），請使用 Google 登入，或在雲端平台設定此環境變數。', 'NO_TEACHER_PIN');
@@ -123,10 +128,27 @@ export function loginDemo({ role, name, pin }) {
   }
   const clean = String(name || '').trim();
   if (!/^[A-Za-z0-9 _.-]{1,24}$/.test(clean)) throw new HttpError(400, '請選擇或輸入英文／數字名稱（1–24 字元）。', 'BAD_NAME');
-  return upsertUser(`demo:student:${clean.toLowerCase()}`, { provider: 'demo', email: null, name: clean, role: 'student' });
+  const dk = deviceKey && /^[A-Za-z0-9_-]{16,64}$/.test(deviceKey) ? deviceKey : null;
+  const key = dk ? `demo:student:${dk}:${clean.toLowerCase()}` : `demo:student:${clean.toLowerCase()}`;
+  return upsertUser(key, { provider: 'demo', email: null, name: clean, role: 'student', guestTag: dk ? crypto.createHash('sha256').update(key).digest('hex').slice(0, 4) : null });
+}
+
+const GUEST_COOKIE = 'tyguest';
+
+/** 取得（或建立）此瀏覽器的訪客識別碼；存放在已簽署的 cookie，一年有效 */
+export function guestDeviceKey(req, res) {
+  const raw = parseCookies(req)[GUEST_COOKIE];
+  if (raw) {
+    const [k, sig] = raw.split('.');
+    const expect = k ? sign(`guest:${k}`) : '';
+    if (k && sig && sig.length === expect.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return k;
+  }
+  const k = crypto.randomBytes(18).toString('base64url');
+  res.append('Set-Cookie', `${GUEST_COOKIE}=${k}.${sign(`guest:${k}`)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${365 * 24 * 3600}${config.secureCookies ? '; Secure' : ''}`);
+  return k;
 }
 
 export function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, role: u.role, provider: u.provider, email: u.email || null };
+  return { id: u.id, name: u.name, role: u.role, provider: u.provider, email: u.email || null, guestTag: u.guestTag || null };
 }
