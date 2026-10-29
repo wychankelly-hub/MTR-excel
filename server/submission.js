@@ -13,8 +13,9 @@ import { expandRange } from './engine/refs.js';
 import { isError } from './engine/values.js';
 import { checksum } from './episode1/rng.js';
 import {
-  adapterFor, getDataset, levelTiming, audit, changed, triggerAudio, pause, teamOfUser, publicSfx, studentSfx, taskPhase,
+  adapterFor, getDataset, levelTiming, audit, changed, triggerAudio, pause, teamOfUser, publicSfx, studentSfx, taskPhase, openReopens,
 } from './competition.js';
+import { readLevelSnapshot } from './sheets.js';
 import { computeTeamScore } from './scoring.js';
 import { bus } from './bus.js';
 
@@ -72,10 +73,18 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     }
     const lvState = comp.levels[task.level];
     if (comp.paused) throw new HttpError(409, '比賽暫停中，暫時不能提交。', 'PAUSED');
-    if (!lvState || lvState.phase !== 'active') throw new HttpError(409, lvState?.phase === 'ended' ? '此關已截止，提交已鎖定。已核實的分數會保留。' : '此關尚未開始。', 'LEVEL_NOT_ACTIVE');
-    const timing = levelTiming(comp, task.level);
-    if (timing.remainingMs <= 0) throw new HttpError(409, '時間到，此關提交已鎖定。', 'TIME_UP');
-    if (taskPhase(comp, task) !== 'active') throw new HttpError(409, '老師尚未開放此題（或已鎖定），暫時不能提交。', 'TASK_LOCKED');
+    // 老師為本隊開放的補做（計分）：該關結束後仍可提交，但不計速度獎勵，錯誤不扣分
+    const makeup = openReopens(comp, team.id, taskId).find((r) => r.mode === 'makeup') || null;
+    let timing;
+    if (makeup) {
+      const t0 = levelTiming(comp, task.level);
+      timing = { elapsedMs: t0.durationMs, durationMs: t0.durationMs, remainingMs: 0 };
+    } else {
+      if (!lvState || lvState.phase !== 'active') throw new HttpError(409, lvState?.phase === 'ended' ? '此關已截止，提交已鎖定。已核實的分數會保留。' : '此關尚未開始。', 'LEVEL_NOT_ACTIVE');
+      timing = levelTiming(comp, task.level);
+      if (timing.remainingMs <= 0) throw new HttpError(409, '時間到，此關提交已鎖定。', 'TIME_UP');
+      if (taskPhase(comp, task) !== 'active') throw new HttpError(409, '老師尚未開放此題（或已鎖定），暫時不能提交。', 'TASK_LOCKED');
+    }
 
     comp.submissionSeq += 1;
     const sub = {
@@ -91,6 +100,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
       durationMs: timing.durationMs,
       status: 'SUBMITTING',
       provider: comp.adapter,
+      ...(makeup ? { makeup: makeup.id } : {}),
     };
     comp.idempotency[idemKey] = sub.id;
     comp.submissions.push(sub);
@@ -145,7 +155,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     }
 
     // 3. 同一 Snapshot 重複提交：不重新計分
-    const prevSame = [...comp.submissions].reverse().find((s) => s !== sub && s.teamId === team.id && s.taskId === taskId && ['VERIFIED', 'REJECTED'].includes(s.status));
+    const prevSame = [...comp.submissions].reverse().find((s) => s !== sub && !s.practice && s.teamId === team.id && s.taskId === taskId && ['VERIFIED', 'REJECTED'].includes(s.status));
     if (prevSame && prevSame.snapshotHash === sub.snapshotHash) {
       sub.status = 'DUPLICATE';
       sub.duplicateOf = prevSame.id;
@@ -182,6 +192,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
       }
     }
     if (sub.needsReview) sub.message = '部分結果需要老師覆核，此提交不會扣分。';
+    if (sub.makeup && sub.status !== 'VERIFIED') sub.noPenalty = true;
     // 全部作答格仍是空白（例如誤按）：顯示提示但不當作錯誤提交扣分
     if (taskCells.every((a) => inputs[a] === null || inputs[a] === '')) {
       sub.noPenalty = true;
@@ -192,12 +203,12 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     const score = computeTeamScore(comp, team.id);
     const ls = score.levels[task.level];
     const reqIds = requiredTasks(task.level, comp.cancelledTasks.map((c) => c.taskId)).map((t) => t.id);
-    if (ls.completed && reqIds.includes(taskId) && !comp.levels[task.level].firstClear) {
+    if (!sub.makeup && ls.completed && reqIds.includes(taskId) && !comp.levels[task.level].firstClear) {
       comp.levels[task.level].firstClear = { teamId: team.id, at: sub.at };
       try { triggerAudio(comp, `L${task.level}_FIRST_CLEAR`, { auto: true }); } catch { /* 不影響提交 */ }
     }
     // 投影端的公開音效／動畫（只有隊名，沒有答案）
-    if (sub.status === 'VERIFIED') {
+    if (sub.status === 'VERIFIED' && !sub.makeup) {
       publicSfx(comp, ls.completed && ls.completedAt === sub.at ? 'level_clear' : 'task_clear', team, task.level);
     }
     // 只送到提交隊伍的學生裝置：答對／答錯／完成一關／Bonus
@@ -210,5 +221,61 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     audit(comp, user, 'SUBMIT', { teamId: team.id, taskId, status: sub.status, earned: sub.earned, id: sub.id });
     changed(comp, 'submission');
     return submissionSummary(sub);
+  });
+}
+
+/**
+ * 練習（重做）提交：讀取練習副本並以相同的批改程序（包括隱藏測試）批改。
+ * 練習結果不計分、不影響排行榜，亦不會扣分；原來的提交及作答保留不變。
+ */
+export async function submitPractice(comp, user, { reopenId, idempotencyKey }) {
+  const team = teamOfUser(comp, user.id);
+  if (!team) throw new HttpError(403, '你未加入此比賽的隊伍。', 'NO_TEAM');
+  const reopen = (comp.reopens || []).find((r) => r.id === reopenId);
+  if (!reopen || reopen.mode !== 'practice' || !reopen.teamIds.includes(team.id)) throw new HttpError(403, '沒有此練習，或練習不屬於你的隊伍。', 'NO_PRACTICE');
+  if (reopen.closedAt) throw new HttpError(409, '老師已結束這次練習。', 'PRACTICE_CLOSED');
+  const task = TASK_BY_ID[reopen.taskId];
+  const key = String(idempotencyKey || '').slice(0, 80);
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) throw new HttpError(400, '缺少有效的提交識別碼（Idempotency Key）。');
+  const idemKey = `${team.id}:P:${key}`;
+  const replay = () => {
+    const prevId = comp.idempotency[idemKey];
+    const prev = prevId && comp.submissions.find((s) => s.id === prevId);
+    return prev ? { ...submissionSummary(prev), practice: true, replayed: true } : null;
+  };
+  const r0 = replay();
+  if (r0) return r0;
+  return withTeamLock(`${comp.id}:${team.id}`, async () => {
+    const again = replay();
+    if (again) return again;
+    comp.submissionSeq += 1;
+    const sub = {
+      id: `sub_${comp.submissionSeq}_${crypto.randomBytes(3).toString('hex')}`,
+      seq: comp.submissionSeq, idempotencyKey: key, teamId: team.id, userId: user.id, taskId: task.id, level: task.level,
+      at: clock.now(), practice: true, reopenId: reopen.id, noPenalty: true, status: 'SUBMITTING', provider: 'builtin',
+    };
+    comp.idempotency[idemKey] = sub.id;
+    comp.submissions.push(sub);
+    const snap = readLevelSnapshot(comp, team, task.level, reopen.id);
+    const dataset = getDataset(comp, team);
+    const lv = LEVEL_BY_NUM[task.level];
+    const taskCells = task.cells.flatMap(expandRange);
+    const editableCells = lv.editable.flatMap(expandRange);
+    const inputs = Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.input ?? null]));
+    sub.snapshot = { provider: 'builtin', readAt: snap.readAt, layer: reopen.id, inputs, values: Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.value ?? null])), dataChecksum: dataset.checksums[task.level] };
+    sub.snapshotHash = checksum({ task: task.id, inputs: Object.fromEntries(taskCells.map((a) => [a, inputs[a]])) });
+    const prevSame = [...comp.submissions].reverse().find((s) => s !== sub && s.reopenId === reopen.id && s.teamId === team.id && ['VERIFIED', 'REJECTED'].includes(s.status));
+    if (prevSame && prevSame.snapshotHash === sub.snapshotHash) {
+      Object.assign(sub, { status: 'DUPLICATE', duplicateOf: prevSame.id, earned: prevSame.earned, max: prevSame.max, markingPoints: prevSame.markingPoints, errors: prevSame.errors, message: '工作表內容與上一次練習提交相同，沿用上次結果。' });
+      changed(comp, 'submission');
+      return { ...submissionSummary(sub), practice: true };
+    }
+    const result = gradeTask(task.id, inputs, dataset);
+    Object.assign(sub, { status: result.status, earned: result.earned, max: result.max, markingPoints: result.markingPoints, errors: result.errors, validatorVersion: result.validatorVersion, needsReview: result.needsReview });
+    sub.message = result.status === 'VERIFIED' ? '練習：全部評分點正確（練習不計分）。' : '練習：未全對，可以修改後再提交（練習不計分、不扣分）。';
+    studentSfx(comp, team.id, result.status === 'VERIFIED' ? 'correct' : 'wrong', sub.id);
+    audit(comp, user, 'PRACTICE_SUBMIT', { teamId: team.id, taskId: task.id, reopenId: reopen.id, status: sub.status, earned: sub.earned, id: sub.id });
+    changed(comp, 'submission');
+    return { ...submissionSummary(sub), practice: true };
   });
 }

@@ -10,6 +10,9 @@ let me = null;
 let editor = null;
 let rulesSig = '';
 let wasDown = false;
+let viewPractice = null; // 正在做的練習（reopenId）
+const practiceInfo = {}; // reopenId -> 練習資料（題目、提交紀錄）
+const practiceOf = (rid) => (state?.practice || []).find((p) => p.reopenId === rid);
 let mode = null;
 let viewLevel = null;
 let lastActive = undefined;
@@ -71,6 +74,7 @@ function renderSfxControls(st) {
 function setState(s) {
   state = s;
   serverClock.sync(s.serverNow);
+  if (viewPractice && !practiceOf(viewPractice)) { viewPractice = null; if (editor?.cur?.layer !== 'main') editor.tabsKey = null; }
   render();
 }
 
@@ -206,17 +210,23 @@ function renderSheetBox() {
   if (!editor) {
     box.dataset.kind = 'builtin';
     clear(box, h('div#editorroot', { style: { height: '100%' } }));
+    // 練習副本（可能屬於之前的劇集）使用練習專用的網址；伺服器檢查學生是否屬於該隊
+    const route = (sheet, layer, suffix) => {
+      const p = layer && layer !== 'main' ? practiceOf(layer) : null;
+      return p ? `/practice/${p.compId}/${p.reopenId}${suffix ? `/${suffix}` : '/sheet'}` : `/sheet/${encodeURIComponent(sheet)}${suffix ? `/${suffix}` : ''}`;
+    };
     editor = new SheetEditor($('editorroot'), {
       me: me.id,
-      load: (sheet, layer) => api('GET', `/sheet/${encodeURIComponent(sheet)}?layer=${encodeURIComponent(layer || 'main')}`),
-      send: (sheet, layer, ops) => api('POST', `/sheet/${encodeURIComponent(sheet)}/ops`, { layer, ops }),
-      presence: (sheet, layer, a, editing) => api('POST', `/sheet/${encodeURIComponent(sheet)}/presence`, { layer, a, editing }),
+      load: (sheet, layer) => api('GET', `${route(sheet, layer)}?layer=${encodeURIComponent(layer || 'main')}`),
+      send: (sheet, layer, ops) => api('POST', route(sheet, layer, 'ops'), { layer, ops }),
+      presence: (sheet, layer, a, editing) => api('POST', route(sheet, layer, 'presence'), { layer, a, editing }),
+      onOpen: (cur) => { const next = cur.layer !== 'main' ? cur.layer : null; if (next !== viewPractice) { viewPractice = next; renderPanel(); } },
       onSaveState: (st) => { const el = $('savestate'); if (el) { el.textContent = st === 'saved' ? '' : st === 'saving' ? '儲存中…' : '⚠ 未儲存'; } },
     });
     window.__tyEditor = editor;
   }
   const tabs = levels.map((l) => ({ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}`, title: l.sheet }));
-  for (const p of state.practice || []) tabs.push({ sheet: p.sheet, layer: p.reopenId, label: `📝 練習 ${p.taskId}`, practice: true, title: '練習模式：不影響分數' });
+  for (const p of state.practice || []) tabs.push({ sheet: p.sheet, layer: p.reopenId, label: `📝 練習 ${p.taskId}${p.compId !== state.id ? `（${p.episode}）` : ''}`, practice: true, title: '練習模式：不影響分數' });
   const active = levels.find((l) => l.phase === 'active');
   const key = tabs.map((t) => `${t.sheet}|${t.layer}`).join(',');
   if (editor.tabsKey !== key) {
@@ -228,16 +238,85 @@ function renderSheetBox() {
   if (sig !== rulesSig) { const first = !rulesSig; rulesSig = sig; if (!first) editor.refreshRules(); }
 }
 
+function practiceList() {
+  const items = state.practice || [];
+  if (!items.length) return null;
+  return h('div.card.practice-card',
+    h('div.section-title', '📝 老師重開的題目（練習，不計分）'),
+    items.map((p) => h('div.row', { style: { margin: '4px 0' } },
+      h('span', `${p.compId !== state.id ? `${p.episode}・` : ''}L${p.level} ${p.levelTitle}・${p.taskId}`),
+      h('button.small.right', { type: 'button', onclick: () => editor?.open(p.sheet, p.reopenId) }, viewPractice === p.reopenId ? '練習中' : '開始練習'))));
+}
+
+async function loadPractice(rid) {
+  const p = practiceOf(rid);
+  if (!p) return null;
+  try { practiceInfo[rid] = await api('GET', `/practice/${p.compId}/${p.reopenId}`); } catch (e) { toast(e.message, 'error'); }
+  return practiceInfo[rid];
+}
+
+function practicePanel(panel) {
+  const p = practiceOf(viewPractice);
+  if (!p) { viewPractice = null; return false; }
+  const info = practiceInfo[viewPractice];
+  if (!info) { loadPractice(viewPractice).then(() => renderPanel()); clear(panel, h('div.card', h('p.muted', '載入練習…'))); return true; }
+  const t = info.task;
+  const latest = info.submissions.filter((x) => ['VERIFIED', 'REJECTED', 'DUPLICATE'].includes(x.status)).at(-1);
+  const busy = pending[`P:${viewPractice}`];
+  clear(panel,
+    h('div.card.lvl-card', { style: { '--line-color': '#7048E8' } },
+      h('div.lvl-head', h('span.pill.warn', { style: { whiteSpace: 'nowrap' } }, '📝 練習'), h('h2', `${t.id}（${info.episodeTitle}・L${info.level.level} ${info.level.title}）`)),
+      h('p.notice.info', '這是老師重開的練習：在獨立的練習工作表作答，提交不計分、不扣分，亦不會改變排行榜。原來的作答及分數保留。'),
+      h('p.goal', h('strong', '🎯 任務目標：'), info.level.storyGoal),
+      info.level.rule ? h('div.notice.info', h('strong', '規則：'), richText(info.level.rule)) : null),
+    h('div.card',
+      h('div.task', { id: `task-${t.id}` },
+        h('div.head', h('span.id', t.id), h('span.pill.warn', '練習（不計分）'), latest ? h(`span.pill.${latest.status === 'VERIFIED' ? 'ok' : 'bad'}`, latest.status === 'VERIFIED' ? '練習：全對' : '練習：未全對') : null),
+        h('div.task-instr', richText(t.instruction)),
+        h('div.submit-row',
+          h('button.primary.big', { type: 'button', disabled: busy || info.closed, onclick: () => submitPracticeNow(p) }, busy ? '⏳ 提交中…' : '📝 練習提交'),
+          h('button', { type: 'button', onclick: () => editor?.focusTask(t) }, `前往 ${t.cells.join('、')}`)),
+        h('ul.mp', t.markingPoints.map((m) => h(`li.${!latest?.markingPoints ? 'none' : latest.markingPoints.find((x) => x.id === m.id)?.passed ? 'pass' : 'fail'}`, `${m.label}（${m.max} 分）`))),
+        latest?.message ? h(`div.notice.${latest.status === 'VERIFIED' ? 'ok' : 'warn'}`, latest.message) : null,
+        latest?.errors?.length && latest.status !== 'VERIFIED' ? h('ul.feedback', latest.errors.map((e) => h('li', e.text))) : null),
+      h('button', { type: 'button', style: { marginTop: '10px' }, onclick: () => { const a = (state.levelDetails || []).find((l) => l.phase === 'active') || (state.levelDetails || []).at(-1); if (a) editor?.open(a.sheet, 'main'); } }, '↩ 返回正式作答')));
+  return true;
+}
+
+async function submitPracticeNow(p) {
+  const k = `P:${p.reopenId}`;
+  pending[k] = true;
+  renderPanel();
+  await editor?.flushNow();
+  const idem = uuid();
+  let result = null;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try { result = await api('POST', `/practice/${p.compId}/${p.reopenId}/submit`, { idempotencyKey: idem }); break; } catch (e) {
+      if ((!e.status || [502, 503, 504].includes(e.status)) && attempt < 11) { await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue; }
+      toast(e.message, 'error', 6000);
+      break;
+    }
+  }
+  pending[k] = false;
+  await loadPractice(p.reopenId);
+  if (result) {
+    react(result.status === 'VERIFIED' ? 'correct' : 'wrong');
+    toast(result.status === 'VERIFIED' ? `練習 ${p.taskId}：全對 ✓（不計分）` : `練習 ${p.taskId}：${result.earned}/${result.max}，請再試試`, result.status === 'VERIFIED' ? 'ok' : 'error');
+  }
+  renderPanel();
+}
+
 function renderPanel() {
   const panel = $('panel');
   if (!panel) return;
+  if (viewPractice && practicePanel(panel)) return;
   const started = state.levelDetails || [];
   if (!started.length) {
     clear(panel, h('div.card', { style: { textAlign: 'center' } },
       h('div.welcome-cast', ['fatmaster', 'chanding', 'rocket', 'bat'].map((id) => new Character(id, { size: 82 }).el)),
       h('h2', state.episodeStarted ? '老師即將開始第 1 關' : '等候老師開始'),
       h('p', '比賽開始後，這裏會顯示每一關的任務。所有答案只需要英文、數字、符號及公式。'),
-      teamCard()));
+      teamCard()), practiceList());
     return;
   }
   if (!viewLevel || !started.some((l) => l.level === viewLevel)) viewLevel = currentLevel().level;
@@ -267,6 +346,7 @@ function renderPanel() {
       blockedByCaptain ? h('p.notice.warn', '老師設定了只由隊長提交；你可以協助檢查及分析。') : null),
     story ? h('div.card', { style: { padding: '10px' } }, story) : null,
     lv.roles ? h('div.row', Object.values(lv.roles).map((r) => h(`span.pill${r.isMe ? '.info' : ''}`, `${r.label.split('（')[0]}：${r.name}${r.isMe ? '（你）' : ''}`))) : null,
+    practiceList(),
     hintCard(lv),
     scoreCard(lv),
     lv.review ? reviewCard(lv) : null);

@@ -49,17 +49,21 @@ bus.on('student-sfx', (compId, teamId, payload) => {
 });
 
 // 工作表修改：只送到同一比賽、同一隊的學生，以及該比賽的老師（唯讀預覽）
+// 練習可以屬於之前的劇集：學生的即時連線屬另一場比賽時，仍按隊伍名單送到同隊隊友
+function isTeamMember(compId, teamId, userId) {
+  return !!db.state.competitions[compId]?.teams.find((t) => t.id === teamId)?.memberIds.includes(userId);
+}
+
 bus.on('cells', (compId, teamId, payload) => {
   for (const c of clients) {
-    if (c.info.compId !== compId) continue;
-    if ((c.info.role === 'student' && c.info.teamId === teamId) || c.info.role === 'teacher') send(c, 'cells', { teamId, ...payload });
+    if (c.info.role === 'teacher' ? c.info.compId === compId : c.info.role === 'student' && isTeamMember(compId, teamId, c.info.userId)) send(c, 'cells', { compId, teamId, ...payload });
   }
 });
 
 bus.on('presence', (compId, teamId, payload) => {
   for (const c of clients) {
-    if (c.info.compId !== compId) continue;
-    if ((c.info.role === 'student' && c.info.teamId === teamId && c.info.userId !== payload.user.id) || c.info.role === 'teacher') send(c, 'presence', { teamId, ...payload });
+    if (c.info.role === 'student' && c.info.userId === payload.user.id) continue;
+    if (c.info.role === 'teacher' ? c.info.compId === compId : c.info.role === 'student' && isTeamMember(compId, teamId, c.info.userId)) send(c, 'presence', { compId, teamId, ...payload });
   }
 });
 

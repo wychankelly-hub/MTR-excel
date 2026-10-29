@@ -12,10 +12,11 @@ import {
 } from './auth.js';
 import * as C from './competition.js';
 import { clock } from './clock.js';
-import { submitTask } from './submission.js';
+import { submitTask, submitPractice } from './submission.js';
 import * as sheets from './sheets.js';
 import { episodeOf } from './episodes/index.js';
 import { publicView, studentView, teacherView, resultsCsv, toCsv } from './views.js';
+import { submissionSummary } from './submission.js';
 import { addClient, clientCount } from './realtime.js';
 import { bus } from './bus.js';
 import { assetTable, reviewAsset, uploadAsset, resolvedEvent, regenerateAsset, revertAsset, autoFillMissingAudio } from './audio-assets.js';
@@ -190,6 +191,11 @@ export function createApp() {
   api.post('/teacher/competitions/:id/leaderboard', (req, res) => { const { t, comp } = owned(req); C.setLeaderboard(comp, t, req.body || {}); res.json({ ok: true }); });
   api.post('/teacher/competitions/:id/audio/trigger', (req, res) => { const { t, comp } = owned(req); res.json(C.triggerAudio(comp, req.body?.eventId, { by: t })); });
   api.post('/teacher/competitions/:id/audio/control', (req, res) => { const { t, comp } = owned(req); C.audioControl(comp, t, req.body?.action, req.body?.value); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/tasks/:taskId/start', (req, res) => { const { t, comp } = owned(req); C.setTaskLock(comp, t, req.params.taskId, false); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/tasks/:taskId/lock', (req, res) => { const { t, comp } = owned(req); C.setTaskLock(comp, t, req.params.taskId, true); res.json({ ok: true }); });
+  api.post('/teacher/competitions/:id/reopen', (req, res) => { const { t, comp } = owned(req); res.json(C.createReopen(comp, t, req.body || {})); });
+  api.post('/teacher/competitions/:id/reopen/:rid/close', (req, res) => { const { t, comp } = owned(req); res.json(C.closeReopen(comp, t, req.params.rid)); });
+  api.get('/teacher/competitions/:id/preview', (req, res) => { const { t, comp } = owned(req); res.json(C.teacherPreview(comp, t, String(req.query.teamId || ''), String(req.query.taskId || ''))); });
   api.post('/teacher/competitions/:id/assign', async (req, res) => { const { t, comp } = owned(req); await C.assignStudent(comp, t, String(req.body?.userId || ''), String(req.body?.teamId || '')); res.json({ ok: true }); });
   api.post('/teacher/competitions/:id/auto-assign', async (req, res) => { const { t, comp } = owned(req); res.json(await C.autoAssign(comp, t)); });
   api.post('/teacher/competitions/:id/remove-student', async (req, res) => { const { t, comp } = owned(req); await C.removeStudent(comp, t, String(req.body?.userId || ''), req.body?.reason); res.json({ ok: true }); });
@@ -360,6 +366,46 @@ export function createApp() {
       bus.emit('presence', comp.id, team.id, { sheet: req.params.sheet, layer, a, editing: !!req.body?.editing, user: { id: u.id, name: u.name }, at: clock.now() });
     }
     res.json({ ok: true });
+  });
+
+  // 練習（重做）：可以是目前的比賽或之前的劇集；一律檢查學生是否屬於該比賽中獲重開題目的隊伍
+  const practiceCtx = (req) => {
+    const u = requireStudent(req);
+    const comp = db.state.competitions[String(req.params.compId || '')];
+    const team = comp && C.teamOfUser(comp, u.id);
+    const r = comp && (comp.reopens || []).find((x) => x.id === req.params.rid);
+    if (!comp || !team || !r || r.mode !== 'practice' || !r.teamIds.includes(team.id) || comp.status === C.STATUS.CANCELLED) throw new HttpError(403, '沒有此練習，或練習不屬於你的隊伍。', 'NO_PRACTICE');
+    const lv = episodeOf(comp).levelByNum[r.level];
+    return { u, comp, team, r, lv };
+  };
+  api.get('/practice/:compId/:rid', (req, res) => {
+    const { u, comp, team, r, lv } = practiceCtx(req);
+    const ep = episodeOf(comp);
+    const pub = ep.publicLevel(lv, { bonusEnabled: true });
+    const task = pub.tasks.find((x) => x.id === r.taskId);
+    const subs = comp.submissions.filter((x) => x.teamId === team.id && x.reopenId === r.id).map(submissionSummary);
+    res.json({ compId: comp.id, reopenId: r.id, closed: !!r.closedAt, classCode: comp.classCode, episodeTitle: ep.title, level: { level: lv.level, title: lv.title, sheet: lv.sheet, storyGoal: lv.storyGoal, rule: lv.rule || null }, task, submissions: subs, me: u.id });
+  });
+  api.get('/practice/:compId/:rid/sheet', (req, res) => {
+    const { u, comp, team, r, lv } = practiceCtx(req);
+    res.json({ ...sheets.sheetPayload(comp, team, lv.sheet, r.id, { viewer: u }), me: u.id });
+  });
+  api.post('/practice/:compId/:rid/ops', async (req, res) => {
+    const { u, comp, team, r, lv } = practiceCtx(req);
+    const result = sheets.applyOps(comp, team, u, lv.sheet, r.id, Array.isArray(req.body?.ops) ? req.body.ops : []);
+    if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存資料，系統會自動重試。', 'NOT_SAVED');
+    sheets.broadcastOps(comp, team, u, lv.sheet, r.id, result.applied);
+    res.json(result);
+  });
+  api.post('/practice/:compId/:rid/presence', (req, res) => {
+    const { u, comp, team, r, lv } = practiceCtx(req);
+    const a = String(req.body?.a || '').toUpperCase();
+    if (/^[A-Z]{1,3}[0-9]{1,5}(:[A-Z]{1,3}[0-9]{1,5})?$/.test(a) || a === '') bus.emit('presence', comp.id, team.id, { sheet: lv.sheet, layer: r.id, a, editing: !!req.body?.editing, user: { id: u.id, name: u.name }, at: clock.now() });
+    res.json({ ok: true });
+  });
+  api.post('/practice/:compId/:rid/submit', async (req, res) => {
+    const { u, comp } = practiceCtx(req);
+    res.json(await submitPractice(comp, u, { reopenId: req.params.rid, idempotencyKey: req.body?.idempotencyKey }));
   });
 
   // 舊介面（保留相容）：伺服器計算後的顯示值、沒有版本號的修改

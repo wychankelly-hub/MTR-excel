@@ -375,3 +375,8 @@ details > summary { cursor: pointer; font-weight: 700; }
   .se-table td.pending { color: #F2C14B; }
 }
 .se-ref { position: absolute; border: 2px solid; pointer-events: none; z-index: 1; box-sizing: border-box; }
+.teacher-only { border: 2px dashed var(--bad); }
+.teacher-only h4 { margin: 12px 0 4px; }
+.student-preview .task { margin-top: 10px; }
+tr.on td { background: var(--info-bg); }
+.practice-card { border-left: 6px solid #7048E8; }

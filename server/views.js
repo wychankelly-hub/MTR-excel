@@ -8,11 +8,12 @@ import { LEVELS, LEVEL_BY_NUM, publicLevel, ROLE_LABELS, SKILLS, TASKS } from '.
 import { STORY_CLUES, AUDIO_EVENTS, AUDIO_EVENT_BY_ID } from './episode1/dialogue.js';
 import { CONCEPTS, REVIEW_CARDS, ERRORS } from './episode1/feedback.js';
 import { rankTeams, computeTeamScore, breakdownLines, RULES } from './scoring.js';
-import { levelTiming, publicRankRow, untaughtFor, audioAllowed, audioOutput, teamTaskState, isBuiltin } from './competition.js';
+import { levelTiming, publicRankRow, untaughtFor, audioAllowed, audioOutput, teamTaskState, isBuiltin, openReopens, practiceItemsFor } from './competition.js';
 import { submissionSummary } from './submission.js';
 import { googleCredentialStatus } from './adapters/google-adapter.js';
 import { features } from './config.js';
 import { expandRange } from './engine/refs.js';
+import { episodeOf } from './episodes/index.js';
 
 function levelPublic(comp, lv) {
   const l = comp.levels[lv.level];
@@ -118,7 +119,9 @@ export function studentView(comp, user) {
     pl.score = { ...ls, lines: breakdownLines(ls) };
     pl.teamCompleted = ls.completed;
     pl.successEffect = ls.completed ? (lv.level === 5 && l.phase !== 'ended' ? '你們已破解廣播密碼！請保密，等全班完成後一齊揭曉。' : lv.successEffect) : null;
-    pl.review = l.phase === 'ended' ? reviewForLevel(lv) : null;
+    // 本隊正在重做（練習）此關的題目時，暫時不顯示可得分公式
+    const practicing = openReopens(comp, team.id).some((r) => r.level === lv.level);
+    pl.review = l.phase === 'ended' && !practicing ? reviewForLevel(lv) : null;
     const dl = (id) => (AUDIO_EVENT_BY_ID[id]?.lines || []).map((x) => ({ speaker: x.speaker_name, text: x.subtitle_zh_Hant }));
     pl.dialogue = dl(`L${lv.level}_OPEN`);
     pl.closing = l.phase === 'ended' && lv.level < 5 ? dl(`L${lv.level}_CLOSE`) : [];
@@ -136,13 +139,14 @@ export function studentView(comp, user) {
       workbook: team.workbook ? { provider: team.workbook.provider, url: team.workbook.url || null, status: team.workbook.status, error: team.workbook.status === 'ERROR' ? '工作表連線有問題，請通知老師。' : null } : null,
     },
     levelDetails: levels,
+    practice: practiceItemsFor(user),
     score: { total: score.total, baseTotal: score.baseTotal, combo: score.combo, manual: score.manual, completedLevels: score.completedLevels },
     bonusEnabled: comp.settings.bonusEnabled,
   };
 }
 
 export function diagnostics(comp) {
-  const graded = comp.submissions.filter((s) => ['VERIFIED', 'REJECTED'].includes(s.status));
+  const graded = comp.submissions.filter((s) => ['VERIFIED', 'REJECTED'].includes(s.status) && !s.practice);
   const byCode = {};
   const byConcept = {};
   for (const s of graded) {
@@ -156,11 +160,13 @@ export function diagnostics(comp) {
   }
   const codes = Object.values(byCode).map((x) => ({ code: x.code, concept: x.concept, conceptLabel: CONCEPTS[x.concept], count: x.count, teamCount: x.teams.size, levels: [...x.levels], sample: ERRORS[x.code]?.text.replace('{cell}', '').replace('{detail}', '…') })).sort((a, b) => b.count - a.count);
   const perTeam = comp.teams.map((t) => {
-    const mine = comp.submissions.filter((s) => s.teamId === t.id);
+    const all = comp.submissions.filter((s) => s.teamId === t.id);
+    const mine = all.filter((s) => !s.practice);
     const score = computeTeamScore(comp, t.id);
     return {
       teamId: t.id, name: t.name, color: t.color,
       submissions: mine.length,
+      practice: all.length - mine.length,
       verified: mine.filter((s) => s.status === 'VERIFIED').length,
       rejected: mine.filter((s) => s.status === 'REJECTED').length,
       syncFailures: mine.filter((s) => s.status === 'RETRYABLE_ERROR').length,
@@ -201,13 +207,18 @@ export function teacherView(comp) {
       roles: Object.fromEntries(Object.entries(t.roles || {}).map(([lvl, r]) => [lvl, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v ? { id: v, name: nameOf(v) } : null]))])),
       workbook: t.workbook,
     })),
+    episode: comp.episode || 'E1',
+    episodeTitle: episodeOf(comp).title,
     waiting: (comp.waiting || []).map(personOf),
+    taskStates: Object.fromEntries(comp.teams.map((t) => [t.id, Object.fromEntries(TASKS.map((task) => { const st = teamTaskState(comp, t, task); return [task.id, st.reopen ? 'reopened' : st.state]; }))])),
+    taskOverrides: comp.taskOverrides || {},
+    reopens: comp.reopens || [],
     generation: comp.generation ? { ...comp.generation } : null,
     approval: comp.approval,
     scores: scores.map((s) => ({ ...s, levelsLines: Object.fromEntries(Object.values(s.levels).map((l) => [l.level, breakdownLines(l)])) })),
     rules: RULES,
     submissions: comp.submissions.slice(-400).map((s) => ({
-      ...submissionSummary(s), teamId: s.teamId, userName: nameOf(s.userId), elapsedMs: s.elapsedMs,
+      ...submissionSummary(s), teamId: s.teamId, userName: nameOf(s.userId), elapsedMs: s.elapsedMs, practice: !!s.practice, makeup: s.makeup || null,
       snapshot: s.snapshot ? { provider: s.snapshot.provider, readAt: s.snapshot.readAt, inputs: Object.fromEntries(Object.entries(s.snapshot.inputs).filter(([, v]) => v !== null)) } : null,
       engineMismatch: s.engineMismatch || null, integrityCells: s.integrityCells || null,
     })),

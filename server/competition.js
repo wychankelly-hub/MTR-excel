@@ -226,6 +226,7 @@ export function createCompetition(teacher, opts = {}) {
       maxTeamSize: 5,
       captainOnlySubmit: !!opts.captainOnlySubmit,
       lockOnComplete: opts.lockOnComplete !== false, // 全對的題目鎖定（避免之後誤改）
+      taskByTask: !!opts.taskByTask, // 逐題開放（老師逐題按「開始」）
       // 分隊：'teacher' = 學生加入後由老師分隊；'student' = 學生加入時自選一次（之後只有老師可以轉隊）
       teamSelection: opts.teamSelection === 'teacher' ? 'teacher' : 'student',
       // 只容許名單內的 Google 帳戶／網域加入（留空 = 不限制）
@@ -305,6 +306,8 @@ export function updateSettings(comp, teacher, patch) {
   if (patch.allowedEmails !== undefined) s.allowedEmails = cleanEmails(patch.allowedEmails);
   if (patch.allowedDomains !== undefined) s.allowedDomains = cleanDomains(patch.allowedDomains);
   if (patch.requireGoogle !== undefined) s.requireGoogle = !!patch.requireGoogle;
+  if (patch.taskByTask !== undefined) s.taskByTask = !!patch.taskByTask;
+  if (patch.lockOnComplete !== undefined) s.lockOnComplete = !!patch.lockOnComplete;
   if (patch.title) comp.title = String(patch.title).slice(0, 80);
   if (Array.isArray(patch.teams)) {
     for (const p of patch.teams) {
@@ -384,6 +387,46 @@ export function preflightDetail(comp, teacher, teamId) {
       initial: ds.levels[lv.level].initial,
       hiddenSummary: summarizeParams(lv.level, ds.hidden[lv.level]),
     })),
+  };
+}
+
+/** 老師預覽：某隊看到的題目（與學生畫面相同）＋只供老師的參考答案、評分點、常見錯誤 */
+export function teacherPreview(comp, teacher, teamId, taskId) {
+  requireOwner(comp, teacher);
+  const ep = episodeOf(comp);
+  const team = getTeam(comp, teamId);
+  const task = ep.taskById[taskId];
+  if (!task) throw new HttpError(400, '沒有此題目。');
+  const lv = ep.levelByNum[task.level];
+  const ds = comp.generation ? getDataset(comp, team) : null;
+  const pub = ep.publicLevel(lv, { bonusEnabled: true });
+  const ptask = pub.tasks.find((t) => t.id === taskId);
+  const cells = task.cells.flatMap(expandRange);
+  const inTask = (a) => cells.includes(a);
+  const dlg = (id) => (ep.audioEventById[id]?.lines || []).map((x) => ({ speaker: x.speaker_name, text: x.subtitle_zh_Hant }));
+  return {
+    episode: { id: ep.id, title: ep.title },
+    team: { id: team.id, name: team.name, color: team.color },
+    level: { level: lv.level, title: lv.title, sheet: lv.sheet, storyGoal: lv.storyGoal, rule: lv.rule || null, safetyNote: lv.safetyNote || null, editable: lv.editable, hints: lv.hints, dialogue: dlg(ep.audio.open(lv.level)) },
+    task: ptask,
+    teacher: ds ? {
+      reference: Object.fromEntries(Object.entries(lv.referenceFormulas).filter(([a]) => inTask(a))),
+      expected: Object.fromEntries(Object.entries(ds.ref[lv.level]).filter(([a]) => inTask(a)).map(([a, v]) => [a, typeof v === 'object' && v ? (v.code || JSON.stringify(v)) : v])),
+      markingPoints: task.markingPoints,
+      commonErrors: ep.wrongCases(taskId, ds).map((c) => {
+        const first = Object.entries(c.inputs)[0];
+        return { name: c.name, sample: first ? `${first[0]}: ${first[1]}` : '', maxEarned: c.maxEarned, codes: c.codes, feedback: c.codes.map((code) => (ep.errors[code]?.text || code).replace('{cell}', cells[0]).replace('{detail}', '…')) };
+      }),
+      params: ep.summarizeParams(lv.level, ds.levels[lv.level]),
+      hidden: ep.summarizeParams(lv.level, ds.hidden[lv.level]),
+    } : null,
+    states: comp.teams.map((t) => {
+      const st = teamTaskState(comp, t, task);
+      const subs = comp.submissions.filter((x) => x.teamId === t.id && x.taskId === taskId);
+      return { teamId: t.id, name: t.name, color: t.color, state: st.reopen ? 'reopened' : st.state, reopen: st.reopen, best: teamBest(comp, t.id, taskId), attempts: subs.filter((x) => !x.practice && ['VERIFIED', 'REJECTED'].includes(x.status)).length, practiceAttempts: subs.filter((x) => x.practice).length };
+    }),
+    phase: taskPhase(comp, task),
+    reopens: (comp.reopens || []).filter((r) => r.taskId === taskId),
   };
 }
 
@@ -704,6 +747,9 @@ export function startLevel(comp, teacher, n, { overrideUntaught = false } = {}) 
   if (!comp.episodeStartedAt) comp.episodeStartedAt = clock.now();
   const now = clock.now();
   comp.levels[n] = { phase: 'active', startedAt: now, durationMs: comp.settings.levelSeconds[n] * 1000, pausedMs: 0, pauseStartedAt: null, warned: false, firstClear: null, extendedMs: 0 };
+  // 逐題開放：只開放第一題，其餘由老師按「開始」逐題開放
+  comp.taskOverrides ??= {};
+  if (comp.settings.taskByTask) lv.tasks.filter((t) => !t.bonus).slice(1).forEach((t) => { comp.taskOverrides[t.id] = 'locked'; });
   comp.currentLevel = n;
   comp.status = runningStatus(n);
   audit(comp, teacher, 'START_LEVEL', { level: n });
@@ -725,6 +771,79 @@ export function endLevel(comp, by, n, reason = 'manual') {
   if (n < 5) triggerAudio(comp, `L${n}_CLOSE`, { by, auto: true });
   else triggerAudio(comp, 'E1_FINAL_REVEAL', { by, auto: true });
   changed(comp, 'level-end');
+}
+
+// ------------------------------------------------------------------ 題目開放／鎖定（老師控制，伺服器執行）
+export function setTaskLock(comp, teacher, taskId, locked) {
+  requireOwner(comp, teacher);
+  const ep = episodeOf(comp);
+  const task = ep.taskById[taskId];
+  if (!task) throw new HttpError(400, '沒有此題目。');
+  const l = comp.levels[task.level];
+  if (l.phase === 'pending') throw new HttpError(409, `請先開始第 ${task.level} 關（開始關卡時會開放該關的題目）。`, 'LEVEL_NOT_STARTED');
+  if (l.phase !== 'active') throw new HttpError(409, `第 ${task.level} 關已結束。如要讓學生重做，請使用「重開題目」。`, 'LEVEL_ENDED');
+  comp.taskOverrides ??= {};
+  if (locked) comp.taskOverrides[taskId] = 'locked';
+  else delete comp.taskOverrides[taskId];
+  audit(comp, teacher, locked ? 'LOCK_TASK' : 'START_TASK', { taskId });
+  if (!locked) studentSfx(comp, null, 'unlock', `task-${taskId}-${clock.now()}`);
+  changed(comp, 'task-lock');
+}
+
+// ------------------------------------------------------------------ 重開題目（練習／補做）
+// practice：練習模式（預設）— 使用獨立的工作表副本，提交不計分、不影響排行榜，原有作答及紀錄保留。
+// makeup：補做（計分）— 例如學生曾斷線；在正式工作表作答，只計基礎分（不計速度獎勵，錯誤不扣分）。
+export function createReopen(comp, teacher, { taskId, teamIds, mode = 'practice', fresh = false, note = '' }) {
+  requireOwner(comp, teacher);
+  const ep = episodeOf(comp);
+  const task = ep.taskById[taskId];
+  if (!task) throw new HttpError(400, '沒有此題目。');
+  if (!['practice', 'makeup'].includes(mode)) throw new HttpError(400, '模式只可以是練習或補做。');
+  const ids = teamIds === 'all' || !Array.isArray(teamIds) || !teamIds.length ? comp.teams.map((t) => t.id) : teamIds.filter((id) => comp.teams.some((t) => t.id === id));
+  if (!ids.length) throw new HttpError(400, '請選擇隊伍。');
+  if (comp.levels[task.level].phase === 'pending') throw new HttpError(409, '此題所屬的關卡尚未開始，不需要重開。');
+  if (mode === 'makeup' && comp.levels[task.level].phase === 'active' && !comp.paused) throw new HttpError(409, '此關仍在進行中，學生可以直接作答，不需要補做。');
+  comp.reopens ??= [];
+  // 同一題同一隊只保留一個進行中的重開
+  for (const r of comp.reopens) {
+    if (!r.closedAt && r.taskId === taskId && r.teamIds.some((x) => ids.includes(x))) throw new HttpError(409, `${task.id} 已為部分隊伍重開（${r.mode === 'practice' ? '練習' : '補做'}），請先結束該次重開。`, 'ALREADY_REOPENED');
+  }
+  const r = { id: `r${randCode(8, 'abcdefghjkmnpqrstuvwxyz23456789')}`, taskId, level: task.level, teamIds: ids, mode, fresh: !!fresh, note: String(note || '').slice(0, 200), createdAt: clock.now(), by: teacher.id, closedAt: null };
+  comp.reopens.push(r);
+  audit(comp, teacher, 'REOPEN_TASK', { id: r.id, taskId, teamIds: ids, mode, fresh: r.fresh });
+  for (const id of ids) studentSfx(comp, id, 'unlock', `reopen-${r.id}`);
+  changed(comp, 'reopen');
+  return r;
+}
+
+export function closeReopen(comp, teacher, reopenId) {
+  requireOwner(comp, teacher);
+  const r = (comp.reopens || []).find((x) => x.id === reopenId);
+  if (!r) throw new HttpError(404, '沒有此重開紀錄。');
+  if (r.closedAt) return r;
+  r.closedAt = clock.now();
+  r.closedBy = teacher.id;
+  audit(comp, teacher, 'CLOSE_REOPEN', { id: r.id, taskId: r.taskId });
+  changed(comp, 'reopen');
+  return r;
+}
+
+/** 學生在所有比賽（包括之前的劇集）中可以做的練習 */
+export function practiceItemsFor(user) {
+  const out = [];
+  for (const comp of Object.values(db.state.competitions)) {
+    if (comp.status === STATUS.CANCELLED) continue;
+    const team = teamOfUser(comp, user.id);
+    if (!team) continue;
+    const ep = episodeOf(comp);
+    for (const r of comp.reopens || []) {
+      if (r.mode !== 'practice' || !r.teamIds.includes(team.id) || r.closedAt) continue;
+      const task = ep.taskById[r.taskId];
+      const lv = ep.levelByNum[task.level];
+      out.push({ compId: comp.id, reopenId: r.id, taskId: r.taskId, level: task.level, sheet: lv.sheet, levelTitle: lv.title, episode: ep.id, episodeTitle: ep.title, classCode: comp.classCode, compTitle: comp.title, createdAt: r.createdAt });
+    }
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function extendLevel(comp, teacher, n, seconds) {

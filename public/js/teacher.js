@@ -2,6 +2,7 @@ import { api, h, clear, richText, fmtTime, fmtClock, serverClock, stream, toast,
 import { routeMap, RaceBoard, levelTransition } from './rail.js';
 import { Character, CHARACTERS } from './characters.js';
 import { StoryStage, createAudioDevice, remainingOf } from './stage.js';
+import { SheetEditor } from './sheet-editor.js';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
@@ -15,7 +16,7 @@ let dirty = false;
 let sys = null;
 
 const TABS = [
-  ['setup', 'A. 設定'], ['teams', 'B. 隊伍'], ['preflight', 'C. 數據預檢'], ['live', 'D. 即時控制'],
+  ['setup', 'A. 設定'], ['teams', 'B. 隊伍'], ['preflight', 'C. 數據預檢'], ['live', 'D. 即時控制'], ['questions', 'G. 題目及工作表'],
   ['diag', 'E. 即時診斷'], ['results', 'F. 結果'], ['audio', '配音資產'], ['chars', '角色圖片'], ['system', '系統狀態'], ['audit', '審計紀錄'],
 ];
 
@@ -67,7 +68,7 @@ async function init() {
 
 async function loadComps() {
   comps = await api('GET', '/teacher/competitions');
-  clear($('comp-pick'), h('option', { value: '' }, '＋ 新增比賽'), comps.map((c) => h('option', { value: c.id, selected: c.id === compId }, `${c.title}${c.classCode ? ` · ${c.classCode}` : ''}（${STATUS_LABEL[c.status] || c.status}${c.adapter === 'demo' ? '・Demo' : ''}）`)));
+  clear($('comp-pick'), h('option', { value: '' }, '＋ 新增比賽'), comps.map((c) => h('option', { value: c.id, selected: c.id === compId }, `${c.classCode ? `${c.classCode}｜` : ''}${c.title}（${STATUS_LABEL[c.status] || c.status}${c.adapter === 'google' ? '・Google Sheets' : ''}）`)));
 }
 
 async function selectComp(id) {
@@ -81,6 +82,8 @@ async function selectComp(id) {
   sse = stream(`/api/stream?role=teacher&comp=${encodeURIComponent(id)}`, {
     state: (s) => { comp = s; serverClock.sync(s.serverNow); onComp(); if (editing()) dirty = true; else renderAll(); },
     audio: (m) => device.onAudio(m),
+    cells: (d) => { if (qv.editor && d.teamId === qv.teamId) qv.editor.applyRemote(d); },
+    presence: (d) => { if (qv.editor && d.teamId === qv.teamId) qv.editor.applyPresence(d); },
   }, (ok) => { $('conn').textContent = ok ? '即時連線' : '重新連線中…'; $('conn').className = `conn pill ${ok ? 'ok' : 'warn'}`; });
 }
 
@@ -106,7 +109,7 @@ function editing() {
 
 function renderAll() {
   const opt = comp && [...$('comp-pick').options].find((o) => o.value === comp.id);
-  if (opt) opt.textContent = `${comp.title}${comp.classCode ? ` · ${comp.classCode}` : ''}（${STATUS_LABEL[comp.status] || comp.status}${comp.demo ? '・Demo' : ''}）`;
+  if (opt) opt.textContent = `${comp.classCode ? `${comp.classCode}｜` : ''}${comp.title}（${STATUS_LABEL[comp.status] || comp.status}${comp.adapter === 'google' ? '・Google Sheets' : ''}）`;
   $('status').textContent = comp ? (STATUS_LABEL[comp.status] || comp.status) : '未選擇比賽';
   clear($('banner'), comp ? demoBanner(comp.demo) : null, comp?.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0 } }, `⏸ 比賽暫停中：${comp.pauseReason || ''}`) : null,
     comp && comp.health?.sheets !== 'Ready' && comp.adapter === 'google' ? h('div.notice.bad', { style: { margin: 0, borderRadius: 0 } }, `Google Sheets 狀態：${comp.health.sheets}${comp.health.lastSheetsError ? `（${comp.health.lastSheetsError.message}）` : ''}`) : null);
@@ -116,7 +119,7 @@ function renderAll() {
 
 function renderView() {
   const v = $('view');
-  const fn = { setup: viewSetup, teams: viewTeams, preflight: viewPreflight, live: viewLive, diag: viewDiag, results: viewResults, audio: viewAudio, chars: viewChars, system: viewSystem, audit: viewAudit }[tab];
+  const fn = { setup: viewSetup, teams: viewTeams, preflight: viewPreflight, live: viewLive, questions: viewQuestions, diag: viewDiag, results: viewResults, audio: viewAudio, chars: viewChars, system: viewSystem, audit: viewAudit }[tab];
   const scroll = window.scrollY;
   clear(v, comp ? stepper() : null, fn());
   window.scrollTo(0, scroll);
@@ -153,8 +156,10 @@ function viewSetup() {
     classCode: h('input', { value: comp?.classCode || '', maxlength: 20, placeholder: '例如 4A', disabled: !isNew }),
     teamCount: h('select', { disabled: !isNew && !['DRAFT', 'PREFLIGHT'].includes(comp.status) }, [4, 5, 6, 7].map((n) => h('option', { value: n, selected: (s?.teamCount ?? 6) === n }, `${n} 隊`))),
     adapter: h('select', { disabled: !isNew },
-      h('option', { value: 'demo', selected: !comp || comp.adapter === 'demo' }, 'Demo 模擬工作表（不需要 Google 設定）'),
-      h('option', { value: 'google', selected: comp?.adapter === 'google', disabled: me.provider === 'demo' }, `真實 Google Sheets${me.provider === 'demo' ? '（需以 Google 登入）' : googleReady ? '' : '（Google 尚未連接）'}`)),
+      h('option', { value: 'builtin', selected: !comp || comp.adapter !== 'google' }, '內置工作表（建議：學生在遊戲網站內作答，不需要 Google Sheets）'),
+      h('option', { value: 'google', selected: comp?.adapter === 'google', disabled: me.provider === 'demo' }, `舊模式：Google Sheets${me.provider === 'demo' ? '（需以 Google 登入）' : googleReady ? '' : '（Google 尚未連接）'}`)),
+    taskByTask: h('input', { type: 'checkbox', checked: !!s?.taskByTask }),
+    lockOnComplete: h('input', { type: 'checkbox', checked: s ? s.lockOnComplete !== false : true }),
     teamSelection: h('select', h('option', { value: 'teacher', selected: !s || s.teamSelection === 'teacher' }, '老師分隊（建議）'), h('option', { value: 'student', selected: s?.teamSelection === 'student' }, '學生加入時自選一次')),
     requireGoogle: h('input', { type: 'checkbox', checked: !!s?.requireGoogle }),
     allowed: h('textarea', { rows: 3, style: { width: '100%' }, placeholder: '（可選）只容許這些學校網域或電郵加入，例如 school.edu.hk 或 s1234@school.edu.hk；以逗號或換行分隔', value: [...(s?.allowedDomains || []), ...(s?.allowedEmails || [])].join('\n') }),
@@ -172,6 +177,8 @@ function viewSetup() {
     bonusEnabled: f.bonus.checked,
     captainOnlySubmit: f.captain.checked,
     teamSelection: f.teamSelection.value,
+    taskByTask: f.taskByTask.checked,
+    lockOnComplete: f.lockOnComplete.checked,
     requireGoogle: f.requireGoogle.checked,
     allowedDomains: f.allowed.value.split(/[\s,;]+/).filter((x) => x && !x.includes('@')),
     allowedEmails: f.allowed.value.split(/[\s,;]+/).filter((x) => x.includes('@')),
@@ -185,8 +192,10 @@ function viewSetup() {
       h('div.col',
         h('label', { style: { display: 'block' } }, '比賽標題', f.title),
         h('div.row', h('label', '班別代號', f.classCode), h('label', '隊伍數目', f.teamCount)),
-        h('label', '工作表模式', f.adapter),
-        f.adapter.value === 'google' || comp?.adapter === 'google' ? null : h('small.muted', 'Demo 模式的工作表是伺服器模擬，畫面會清楚標示「模擬」。正式課堂請使用真實 Google Sheets。'),
+        h('label', { style: { display: 'block' } }, '工作表模式', h('div', f.adapter)),
+        h('small.muted', '內置工作表：每隊一份工作表，只有該隊學生可以查看及編輯；作答逐格儲存在雲端資料庫，隊友即時同步。'),
+        h('label', f.taskByTask, '逐題開放（開始關卡時只開放第一題，其餘題目由老師在「G. 題目及工作表」逐題開放）'),
+        h('label', f.lockOnComplete, '全對的題目自動鎖定（避免之後誤改；老師可重開）'),
         h('div', h('strong', '每關時間（分鐘）'), h('div.row', cfg.levels.map((l, i) => h('label', `L${l.level}`, times[i])))),
         h('label', f.bonus, '開啟 Bonus 加題（L1 MIN，+50；所有隊伍相同機會）'),
         h('label', f.captain, '只容許隊長（Captain）提交'),
@@ -270,7 +279,7 @@ function workbookLine(t) {
   const parts = [];
   if (!wb) parts.push(h('span.pill', '工作表：未建立'));
   else {
-    parts.push(h(`span.pill.${wb.status === 'READY' ? 'ok' : wb.status === 'ERROR' ? 'bad' : 'warn'}`, `工作表：${wb.provider === 'demo' ? '模擬' : 'Google'}・${wb.status}`));
+    parts.push(h(`span.pill.${wb.status === 'READY' ? 'ok' : wb.status === 'ERROR' ? 'bad' : 'warn'}`, `工作表：${wb.provider === 'google' ? 'Google Sheets' : '內置'}・${wb.status}`));
     if (wb.url) parts.push(h('a', { href: wb.url, target: '_blank', rel: 'noopener' }, '開啟 ↗'));
     if (wb.error) parts.push(h('div.notice.bad', wb.error));
     if (wb.shareError) parts.push(h('div.notice.warn', `分享問題：${wb.shareError}`));
@@ -309,7 +318,7 @@ function viewPreflight() {
       h('div.row',
         h('button', { type: 'button', disabled: locked, onclick: () => act(() => post('/generate', { newSeed: true }), '已生成新數據') }, g ? '🔄 重新生成（新 Seed）' : '生成數據'),
         g ? h('button', { type: 'button', disabled: locked, onclick: () => act(() => post('/generate', { newSeed: false }), '已用相同 Seed 重新生成（結果應完全一致）') }, '以相同 Seed 重現') : null,
-        h('button.primary', { type: 'button', disabled: !g?.pass || locked, onclick: () => { if (confirm('批准後數據會鎖定，不能無聲地變動。確定批准？')) act(() => post('/approve'), comp.adapter === 'demo' ? '已批准並建立模擬工作表' : '已批准。下一步：建立 Google Sheets'); } }, '✓ 批准並鎖定'),
+        h('button.primary', { type: 'button', disabled: !g?.pass || locked, onclick: () => { if (confirm('批准後數據會鎖定，不能無聲地變動。確定批准？')) act(() => post('/approve'), comp.adapter === 'google' ? '已批准。下一步：建立 Google Sheets' : '已批准並建立各隊的內置工作表'); } }, '✓ 批准並鎖定'),
         comp.approval && comp.adapter === 'google' ? h('button.primary', { type: 'button', onclick: () => act(() => post('/provision'), '已建立／更新 Google Sheets') }, '建立／重試 Google Sheets 並分享') : null,
         comp.status === 'APPROVED' ? h('button.ok', { type: 'button', onclick: () => act(() => post('/lobby'), '已開放大堂，學生可以加入') }, '開放大堂（Lobby）') : null),
       g ? h('dl.kv', { style: { marginTop: '12px' } },
@@ -439,6 +448,145 @@ function miniBoard(rows) {
     h('tbody', rows.map((r) => h('tr', h('td', r.rank), h('td', h('span.dot', { style: { background: r.color } }), ' ', r.name),
       h('td', Object.entries(r.progress).map(([lv, p]) => h('span', { title: `L${lv}`, style: { marginRight: '4px' } }, p.completed ? '●' : p.done ? '◐' : '○'))),
       h('td.num', r.baseTotal), h('td.num', h('strong', r.total))))));
+}
+
+// ======================================================================= G. 題目及工作表（老師預覽、題目控制、重開）
+const qv = { compId: null, level: 1, taskId: null, teamId: null, layer: 'main', preview: null, editor: null, el: null, key: '' };
+const STATE_CHIP = { locked: ['', '🔒 未開放'], active: ['info', '▶ 進行中'], completed: ['ok', '✓ 已完成'], closed: ['', '已截止'], reopened: ['warn', '↺ 已重開'] };
+
+function viewQuestions() {
+  if (!comp.generation) return h('div.card', h('p.notice.info', '請先在「C. 數據預檢」生成數據。'));
+  if (qv.compId !== comp.id) {
+    Object.assign(qv, { compId: comp.id, level: comp.levels.find((l) => l.phase === 'active')?.level || 1, taskId: null, teamId: comp.teams[0].id, layer: 'main', preview: null, editor: null, el: null, key: '' });
+  }
+  const lvT = comp.levelsTeacher.find((l) => l.level === qv.level);
+  if (!qv.taskId || !lvT.tasks.some((t) => t.id === qv.taskId)) qv.taskId = lvT.tasks[0].id;
+  const team = comp.teams.find((t) => t.id === qv.teamId) || comp.teams[0];
+  qv.teamId = team.id;
+  const pkey = `${comp.id}|${qv.taskId}|${qv.teamId}`;
+  if (qv.key !== pkey) { qv.key = pkey; qv.preview = null; loadPreview(); }
+  const levelSel = h('select', { onchange: (e) => { qv.level = Number(e.target.value); qv.taskId = null; renderView(); } }, comp.levelsTeacher.map((l) => h('option', { value: l.level, selected: l.level === qv.level }, `第 ${l.level} 關 ${l.title}（${PHASE_LABEL[l.phase]}）`)));
+  const taskSel = h('select', { onchange: (e) => { qv.taskId = e.target.value; renderView(); } }, lvT.tasks.map((t) => h('option', { value: t.id, selected: t.id === qv.taskId }, `${t.id}${t.bonus ? '（Bonus）' : ''}`)));
+  const teamSel = h('select', { onchange: (e) => { qv.teamId = e.target.value; qv.layer = 'main'; renderView(); } }, comp.teams.map((t) => h('option', { value: t.id, selected: t.id === qv.teamId }, t.name)));
+  const lvPhase = comp.levels.find((l) => l.level === qv.level).phase;
+  const openReopens = comp.reopens.filter((r) => !r.closedAt && r.taskId === qv.taskId);
+  const teamPractice = comp.reopens.filter((r) => r.mode === 'practice' && r.teamIds.includes(qv.teamId) && comp.taskStates && r.level === qv.level);
+  return h('div.col',
+    h('div.card',
+      h('div.row',
+        h('div', h('div.muted', '劇集'), h('strong', comp.episodeTitle || 'Episode 1')),
+        h('label', '關卡', levelSel), h('label', '題目', taskSel), h('label', '隊伍', teamSel),
+        h('small.muted.right', '要查看另一班或另一集，請在頂部選擇另一場比賽。'))),
+    h('div.card',
+      h('div.row', h('h3', { style: { margin: 0 } }, `${qv.taskId} 各隊狀態`), h(`span.pill.${lvPhase === 'active' ? 'info' : ''}`, `第 ${qv.level} 關：${PHASE_LABEL[lvPhase]}`), comp.paused ? h('span.pill.warn', '比賽暫停中') : null),
+      h('div.table-scroll', h('table',
+        h('thead', h('tr', h('th', '隊伍'), lvT.tasks.map((t) => h('th', t.id)))),
+        h('tbody', comp.teams.map((t) => h(`tr${t.id === qv.teamId ? '.on' : ''}`, h('td', h('span.dot', { style: { background: t.color } }), ' ', t.name),
+          lvT.tasks.map((task) => { const st = comp.taskStates?.[t.id]?.[task.id] || 'locked'; const [cls, label] = STATE_CHIP[st] || ['', st]; return h('td', h(`span.pill.${cls}`, label)); })))))),
+      h('div.row', { style: { marginTop: '10px' } },
+        lvPhase === 'pending' ? h('button.primary', { type: 'button', onclick: () => act(() => post(`/levels/${qv.level}/start`), `第 ${qv.level} 關開出！`) }, `▶ 開始第 ${qv.level} 關`) : null,
+        lvPhase === 'active' ? [
+          h('button.primary', { type: 'button', disabled: !comp.taskOverrides?.[qv.taskId], onclick: () => act(() => post(`/tasks/${qv.taskId}/start`), `已開放 ${qv.taskId}`) }, `▶ 開放 ${qv.taskId}`),
+          h('button', { type: 'button', disabled: !!comp.taskOverrides?.[qv.taskId], onclick: () => act(() => post(`/tasks/${qv.taskId}/lock`), `已鎖定 ${qv.taskId}`) }, `🔒 鎖定 ${qv.taskId}`),
+        ] : null,
+        comp.paused ? h('button.ok', { type: 'button', onclick: () => act(() => post('/resume'), '已繼續') }, '▶ 繼續比賽') : null,
+        lvPhase !== 'pending' ? h('button', { type: 'button', onclick: () => reopenDialog() }, `↺ 重開 ${qv.taskId}…`) : null),
+      openReopens.length ? h('div', { style: { marginTop: '8px' } }, openReopens.map((r) => h('div.row', { style: { margin: '4px 0' } },
+        h(`span.pill.${r.mode === 'practice' ? 'warn' : 'info'}`, r.mode === 'practice' ? '練習（不計分）' : '補做（計分）'),
+        h('span', `${r.taskId}・${r.teamIds.map((id) => comp.teams.find((t) => t.id === id)?.name).join('、')}・${fmtClock(r.createdAt)}${r.fresh ? '・重新開始' : ''}`),
+        h('button.small.danger', { type: 'button', onclick: () => act(() => post(`/reopen/${r.id}/close`), '已結束重開') }, '結束')))) : null),
+    h('div.grid2',
+      h('div.col', previewCard(team)),
+      h('div.card', { style: { padding: '10px' } },
+        h('div.row', { style: { marginBottom: '6px' } }, h('h3', { style: { margin: 0 } }, `${team.name} 的工作表（唯讀・即時）`),
+          teamPractice.length ? h('select.right', { onchange: (e) => { qv.layer = e.target.value; qv.editor?.open(lvT.sheet, qv.layer); } }, h('option', { value: 'main' }, '正式作答'), teamPractice.map((r) => h('option', { value: r.id, selected: qv.layer === r.id }, `練習 ${r.taskId}${r.closedAt ? '（已結束）' : ''}`))) : null),
+        teacherSheet(team, lvT))));
+}
+
+async function loadPreview() {
+  const k = qv.key;
+  try {
+    const p = await api('GET', `/teacher/competitions/${compId}/preview?teamId=${encodeURIComponent(qv.teamId)}&taskId=${encodeURIComponent(qv.taskId)}`);
+    if (qv.key === k) { qv.preview = p; if (tab === 'questions' && !editing()) renderView(); }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function previewCard(team) {
+  const p = qv.preview;
+  if (!p) return h('div.card', h('p.muted', '載入題目…'));
+  const t = p.task;
+  const tc = p.teacher;
+  return [
+    h('div.card.student-preview', { style: { borderTop: `8px solid ${team.color}` } },
+      h('div.row', h('span.pill', '學生畫面（與學生看到的相同）'), h('span.pill', team.name)),
+      h('h3', `第 ${p.level.level} 關　${p.level.title}`),
+      h('p', h('strong', '🎯 任務目標：'), p.level.storyGoal),
+      p.level.rule ? h('div.notice.info', h('strong', '規則：'), richText(p.level.rule)) : null,
+      h('div.task', h('div.head', h('span.id', t.id), h('span.pill', `${t.points} 評分點`), t.bonus ? h('span.pill.warn', 'Bonus') : null),
+        h('div.task-instr', richText(t.instruction)),
+        h('ul.mp', t.markingPoints.map((m) => h('li.none', `${m.label}（${m.max} 分）`)))),
+      p.level.dialogue.length ? h('details', h('summary', '開場對白'), p.level.dialogue.map((d) => h('div', h('strong', `${d.speaker}：`), `「${d.text}」`))) : null),
+    tc ? h('div.card.teacher-only',
+      h('div.row', h('h3', { style: { margin: 0 } }, '只供老師（請勿投影）'), h('span.pill.bad', 'Teacher only')),
+      h('h4', '參考公式'),
+      h('div.mono', Object.entries(tc.reference).slice(0, 4).map(([a, f]) => h('div', `${a}: ${f}`)), Object.keys(tc.reference).length > 4 ? h('div.muted', `…共 ${Object.keys(tc.reference).length} 格（其餘按相對參照複製）`) : null),
+      h('h4', `${team.name} 的預期結果`),
+      h('div.mono', Object.entries(tc.expected).slice(0, 8).map(([a, v]) => h('div', `${a} = ${v}`))),
+      h('h4', '評分點'),
+      h('ul', tc.markingPoints.map((m) => h('li', `${m.label}（${m.max} 分）`))),
+      h('h4', '常見錯誤及系統回饋'),
+      h('table', h('thead', h('tr', h('th', '錯誤'), h('th', '例子'), h('th', '最多得分'), h('th', '學生看到的回饋'))),
+        h('tbody', tc.commonErrors.map((c) => h('tr', h('td', c.name), h('td.mono', { style: { fontSize: '.8em' } }, c.sample), h('td.num', c.maxEarned), h('td', { style: { fontSize: '.85em' } }, c.feedback.join(' ')))))),
+      h('details', h('summary', '數據參數及隱藏測試'), h('div.mono', `本隊：${JSON.stringify(tc.params)}`), h('div.mono', `隱藏測試：${JSON.stringify(tc.hidden)}`)),
+      h('details', h('summary', '提示（學生使用後才看到）'), p.level.hints.map((x, i) => h('div', h('strong', `提示 ${i + 1}：`), richText(x))))) : null,
+  ];
+}
+
+function teacherSheet(team, lvT) {
+  const want = `${comp.id}|${team.id}`;
+  if (!qv.el || qv.elKey !== want) {
+    qv.elKey = want;
+    qv.el = h('div.teacher-sheet', { style: { height: '560px' } });
+    qv.editor = new SheetEditor(qv.el, {
+      readOnly: true,
+      load: (sheet, layer) => api('GET', `/teacher/competitions/${compId}/sheet/${team.id}/${encodeURIComponent(sheet)}?layer=${encodeURIComponent(layer || 'main')}`),
+      send: async () => ({ applied: [] }),
+    });
+    window.__tyTeacherEditor = qv.editor;
+    qv.sheetKey = '';
+  }
+  const tabs = comp.levelsTeacher.filter((l) => l.phase !== 'pending' || l.level === qv.level).map((l) => ({ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}` }));
+  const k = `${tabs.map((t) => t.sheet).join(',')}|${qv.level}|${qv.layer}`;
+  if (qv.sheetKey !== k) {
+    qv.sheetKey = k;
+    qv.editor.setTabs(tabs, { sheet: lvT.sheet, layer: qv.layer });
+    if (qv.layer !== 'main') qv.editor.open(lvT.sheet, qv.layer);
+  } else if (qv.lastRulesSig !== JSON.stringify(comp.taskStates?.[team.id])) {
+    qv.lastRulesSig = JSON.stringify(comp.taskStates?.[team.id]);
+    qv.editor.refreshRules();
+  }
+  return qv.el;
+}
+
+function reopenDialog() {
+  const boxes = comp.teams.map((t) => h('label', h('input', { type: 'checkbox', value: t.id, checked: t.id === qv.teamId }), t.name));
+  const mode = h('select', h('option', { value: 'practice' }, '練習模式（預設）：不計分、不影響排行榜'), h('option', { value: 'makeup' }, '補做（計分）：只計基礎分，不計速度獎勵'));
+  const fresh = h('input', { type: 'checkbox' });
+  clear($('dlg-body'),
+    h('h2', `重開 ${qv.taskId}`),
+    h('p', '練習模式使用獨立的練習工作表（由該隊目前的作答開始），原來的作答、提交及分數全部保留；練習提交不計分。'),
+    h('div', h('strong', '隊伍'), h('div.row', h('button.small', { type: 'button', onclick: () => boxes.forEach((b) => { b.querySelector('input').checked = true; }) }, '全選'), boxes)),
+    h('label', { style: { display: 'block', margin: '8px 0' } }, '模式', mode),
+    h('label', fresh, '練習由起始內容重新開始（不複製之前的作答）'),
+    h('div.row', { style: { marginTop: '12px' } },
+      h('button.primary', { type: 'button', onclick: async () => {
+        const teamIds = boxes.map((b) => b.querySelector('input')).filter((x) => x.checked).map((x) => x.value);
+        if (!teamIds.length) return toast('請選擇隊伍。', 'error');
+        $('dlg').close();
+        await act(() => post('/reopen', { taskId: qv.taskId, teamIds, mode: mode.value, fresh: fresh.checked }), '已重開題目');
+      } }, '確認重開'),
+      h('button', { type: 'button', onclick: () => $('dlg').close() }, '取消')));
+  $('dlg').showModal();
 }
 
 // ======================================================================= E. 即時診斷
@@ -650,7 +798,8 @@ function viewSystem() {
     h('div.card',
       h('h2', '已實作 vs 已連接'),
       h('table', h('tbody',
-        row('Demo Mode（模擬工作表）', f.demoLogin, f.demoLogin ? '已開放。Demo 帳戶只可參加 Demo 比賽，畫面清楚標示「模擬」。' : '已停用（ALLOW_DEMO_LOGIN=false）'),
+        row('內置工作表', true, '學生在遊戲網站內作答（不需要 Google Sheets）；逐格儲存在資料庫，只限本隊存取。'),
+        row('訪客登入', f.demoLogin, f.demoLogin ? '已開放（學生以英文名稱登入；每部電腦的身份分開，不能冒認同學）。正式課堂建議在比賽設定要求 Google 登入。' : '已停用（ALLOW_DEMO_LOGIN=false）'),
         row('Google Sign-in', f.googleSignIn, f.googleSignIn ? '學生及老師可用 Google 帳戶登入。' : '需要 GOOGLE_CLIENT_ID。'),
         row('Google Sheets / Drive', s.google.ready, s.google.ready ? `已連接（${s.google.mode === 'oauth' ? '老師 OAuth' : 'Service Account'}：${s.google.actor}）` : s.google.reason),
         row('伺服器批改引擎', true, 'AST 公式解析 + 重算 + 隱藏測試（Demo 與正式模式相同）。'),

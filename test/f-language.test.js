@@ -58,7 +58,7 @@ test('43. 所有學生答案只需英文、數字、符號及公式', () => {
 
 test('44. 回合未結束時看不到標準答案（學生視圖測試見 d-competition）', () => {
   const src = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'server/views.js'), 'utf8');
-  assert.match(src, /pl\.review = l\.phase === 'ended' \? reviewForLevel\(lv\) : null/);
+  assert.match(src, /pl\.review = l\.phase === 'ended' && !practicing \? reviewForLevel\(lv\) : null/);
 });
 
 test('45. 成績報告能指出五種概念錯誤：$、SUM/MAX 範圍、AND/OR、COUNTIF/SUMIF、&／文字函數', () => {

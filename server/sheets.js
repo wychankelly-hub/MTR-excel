@@ -61,8 +61,14 @@ function practiceBook(comp, team, lv, layer) {
   const key = sheetKey(lv.sheet, layer);
   const existing = cellBook(comp.id, team.id, key, false);
   if (existing) return existing;
-  const src = mainBook(comp, team, lv);
+  const reopen = (comp.reopens || []).find((r) => r.id === layer);
   const book = cellBook(comp.id, team.id, key);
+  if (reopen?.fresh) {
+    // 重新開始：只放入該關的起始內容
+    for (const [a, v] of Object.entries(datasetOf(comp, team).levels[lv.level].initial || {})) putCell(comp.id, team.id, key, a, { i: v, v: 1, by: 'system', at: clock.now() });
+    return book;
+  }
+  const src = mainBook(comp, team, lv);
   for (const [a, e] of Object.entries(src)) if (e && e.i !== null && e.i !== undefined) putCell(comp.id, team.id, key, a, { i: e.i, v: 1, by: 'copy', at: clock.now() });
   return book;
 }

@@ -18,7 +18,8 @@ const GRADED = new Set(['VERIFIED', 'REJECTED']);
 
 export function computeTeamScore(comp, teamId) {
   const cancelled = (comp.cancelledTasks || []).map((c) => c.taskId);
-  const subs = comp.submissions.filter((s) => s.teamId === teamId && GRADED.has(s.status) && !cancelled.includes(s.taskId))
+  // 練習提交不計分；補做提交只影響基礎分（不計速度獎勵、錯誤不扣分）
+  const subs = comp.submissions.filter((s) => s.teamId === teamId && GRADED.has(s.status) && !s.practice && !cancelled.includes(s.taskId))
     .sort((a, b) => a.at - b.at || a.seq - b.seq);
   const levels = {};
   let lastImproveAt = null;
