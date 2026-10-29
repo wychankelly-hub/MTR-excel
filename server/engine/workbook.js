@@ -48,7 +48,11 @@ export class Workbook {
     this.sheets = new Map(); // name -> { cells: Map<addr,{input,ast,parseError}>, maxRow, maxCol }
     this.cache = new Map();
     this.evaluating = new Set();
+    this.rng = Math.random; // RAND／RANDBETWEEN 使用；批改時改為可重現的隨機數
   }
+
+  /** 重新計算（例如 RAND 需要新的隨機數） */
+  recalc() { this.cache.clear(); }
 
   addSheet(name, maxRow = 1000, maxCol = 26) {
     if (!this.sheets.has(name)) this.sheets.set(name, { cells: new Map(), maxRow, maxCol });
@@ -116,7 +120,7 @@ export class Workbook {
   }
 
   evalNode(n, sheetName) {
-    const ev = { evalNode: (x) => this.evalNode(x, sheetName) };
+    const ev = { evalNode: (x) => this.evalNode(x, sheetName), rng: this.rng };
     const scalar = (x) => {
       const v = this.evalNode(x, sheetName);
       return isRange(v) ? v.single() : v;
@@ -190,6 +194,7 @@ export class Workbook {
   clone() {
     const wb = new Workbook();
     for (const [name, sh] of this.sheets) {
+      wb.rng = this.rng;
       const ns = wb.addSheet(name, sh.maxRow, sh.maxCol);
       for (const [k, c] of sh.cells) ns.cells.set(k, c); // cell 物件不可變，可共用
     }

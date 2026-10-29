@@ -48,8 +48,19 @@ bus.on('student-sfx', (compId, teamId, payload) => {
   for (const c of clients) if (c.info.compId === compId && c.info.role === 'student' && (teamId === null || c.info.teamId === teamId)) send(c, 'sfx', payload);
 });
 
-bus.on('sheet', (compId, teamId, sheet, byUserId) => {
-  for (const c of clients) if (c.info.compId === compId && c.info.role === 'student' && c.info.teamId === teamId) send(c, 'sheet', { sheet, byUserId });
+// 工作表修改：只送到同一比賽、同一隊的學生，以及該比賽的老師（唯讀預覽）
+bus.on('cells', (compId, teamId, payload) => {
+  for (const c of clients) {
+    if (c.info.compId !== compId) continue;
+    if ((c.info.role === 'student' && c.info.teamId === teamId) || c.info.role === 'teacher') send(c, 'cells', { teamId, ...payload });
+  }
+});
+
+bus.on('presence', (compId, teamId, payload) => {
+  for (const c of clients) {
+    if (c.info.compId !== compId) continue;
+    if ((c.info.role === 'student' && c.info.teamId === teamId && c.info.userId !== payload.user.id) || c.info.role === 'teacher') send(c, 'presence', { teamId, ...payload });
+  }
 });
 
 export function clientCount(compId) {

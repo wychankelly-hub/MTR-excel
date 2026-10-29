@@ -13,7 +13,7 @@ import { expandRange } from './engine/refs.js';
 import { isError } from './engine/values.js';
 import { checksum } from './episode1/rng.js';
 import {
-  adapterFor, getDataset, levelTiming, audit, changed, triggerAudio, pause, teamOfUser, publicSfx, studentSfx,
+  adapterFor, getDataset, levelTiming, audit, changed, triggerAudio, pause, teamOfUser, publicSfx, studentSfx, taskPhase,
 } from './competition.js';
 import { computeTeamScore } from './scoring.js';
 import { bus } from './bus.js';
@@ -75,6 +75,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     if (!lvState || lvState.phase !== 'active') throw new HttpError(409, lvState?.phase === 'ended' ? '此關已截止，提交已鎖定。已核實的分數會保留。' : '此關尚未開始。', 'LEVEL_NOT_ACTIVE');
     const timing = levelTiming(comp, task.level);
     if (timing.remainingMs <= 0) throw new HttpError(409, '時間到，此關提交已鎖定。', 'TIME_UP');
+    if (taskPhase(comp, task) !== 'active') throw new HttpError(409, '老師尚未開放此題（或已鎖定），暫時不能提交。', 'TASK_LOCKED');
 
     comp.submissionSeq += 1;
     const sub = {

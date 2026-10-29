@@ -24,9 +24,9 @@ export function student(name) {
 }
 
 /** 建立已批准、已開放大堂的 Demo 比賽，並按 perTeam 加入學生 */
-export async function readyCompetition({ teamCount = 6, perTeam = 3, bonusEnabled = false, levelSeconds } = {}) {
+export async function readyCompetition({ teamCount = 6, perTeam = 3, bonusEnabled = false, levelSeconds, lockOnComplete = false } = {}) {
   const t = teacher();
-  const comp = C.createCompetition(t, { teamCount, bonusEnabled, levelSeconds });
+  const comp = C.createCompetition(t, { teamCount, bonusEnabled, levelSeconds, lockOnComplete });
   C.generate(comp, t);
   await C.approve(comp, t);
   C.openLobby(comp, t);

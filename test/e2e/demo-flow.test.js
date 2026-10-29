@@ -121,22 +121,26 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
     for (const S of [A1, A2, B1]) await S.waitForFunction(() => window.__tySfx.log.some((x) => x.kind === 'unlock'), null, { timeout: 10000 });
 
     // ---- 作答
+    // 內置工作表：直接在儲存格輸入、Shift 點選範圍、向下填充；修改自動儲存
+    const saved = (S) => S.waitForFunction(() => window.__tyEditor && window.__tyEditor.pending.size === 0 && !window.__tyEditor.sending, null, { timeout: 10000 });
     const typeCell = async (S, a, text) => {
-      await S.click(`table.grid td[data-a="${a}"]`);
+      await S.click(`.se-table td[data-a="${a}"]`);
       await S.keyboard.type(text);
       await S.keyboard.press('Enter');
-      await S.waitForFunction(() => !document.querySelector('.fx input').matches(':focus'));
-      await S.waitForTimeout(150);
+      await saved(S);
     };
     const fillDown = async (S, from, to) => {
-      await S.click(`table.grid td[data-a="${from}"]`);
-      await S.click(`table.grid td[data-a="${to}"]`, { modifiers: ['Shift'] });
+      await S.click(`.se-table td[data-a="${from}"]`);
+      await S.click(`.se-table td[data-a="${to}"]`, { modifiers: ['Shift'] });
       await S.click('button:has-text("向下填充")');
-      await S.waitForTimeout(300);
+      await saved(S);
     };
-    await A1.waitForSelector('table.grid td[data-a="D2"]');
+    await A1.waitForSelector('.se-table td[data-a="D2"]');
     await typeCell(A1, 'D2', '=B2*C2*$H$1');
     await fillDown(A1, 'D2', 'D21');
+    // 隊友即時看到修改（同一隊）
+    await A2.waitForFunction(() => window.__tyEditor?.inputOf('D21') === '=B21*C21*$H$1', null, { timeout: 10000 });
+    assert.equal(await B1.evaluate(() => window.__tyEditor?.inputOf('D21')), '=B21*C21*H20', '另一隊的工作表不受影響');
     await A1.click('button.task-tab:has-text("T1")');
     await A1.locator('.task button:has-text("檢查／提交")').click();
     await A1.locator('button.task-tab.done:has-text("T1")').waitFor({ timeout: 15000 });
@@ -161,7 +165,7 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
     await B1.screenshot({ path: path.join(SHOTS, 'student-feedback.png') });
 
     // 受保護儲存格不可修改
-    await B1.click('table.grid td[data-a="B2"]');
+    await B1.click('.se-table td[data-a="B2"]');
     await B1.keyboard.type('9');
     await B1.waitForSelector('text=受保護的原始資料');
 
@@ -180,7 +184,7 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
 
     // 重新整理不會重播已播放的音效
     await A2.reload();
-    await A2.waitForSelector('table.grid');
+    await A2.waitForSelector('.se-table');
     await A2.click('body');
     await A2.waitForTimeout(1500);
     assert.deepEqual(await sfxKinds(A2), [], '重新整理後沒有重播');

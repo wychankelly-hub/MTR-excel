@@ -1,5 +1,5 @@
 import { api, h, clear, richText, fmtTime, serverClock, stream, toast, uuid, SUB_LABEL, PHASE_LABEL, demoBanner } from './common.js';
-import { SheetGrid } from './sheet-grid.js';
+import { SheetEditor } from './sheet-editor.js';
 import { GameSfx } from './sfx.js';
 import { Character, CHARACTERS, REACTIONS } from './characters.js';
 import { routeMap, pids, levelTransition } from './rail.js';
@@ -7,7 +7,9 @@ import { routeMap, pids, levelTransition } from './rail.js';
 const $ = (id) => document.getElementById(id);
 let state = null;
 let me = null;
-let grid = null;
+let editor = null;
+let rulesSig = '';
+let wasDown = false;
 let mode = null;
 let viewLevel = null;
 let lastActive = undefined;
@@ -45,11 +47,15 @@ function connect() {
   sse?.close();
   sse = stream('/api/stream?role=student', {
     state: (s) => setState(s),
-    sheet: (d) => { if (grid && d.byUserId !== me.id && d.sheet === grid.current) grid.refresh(); },
+    cells: (d) => editor?.applyRemote(d),
+    presence: (d) => editor?.applyPresence(d),
     sfx: (d) => sfx.handle(d),
   }, (ok) => {
     $('conn').textContent = ok ? '● 已連線' : '重新連線中…';
     $('conn').className = `conn pill ${ok ? 'ok' : 'warn'}`;
+    // 重新連線後重新載入工作表，避免錯過斷線期間隊友的修改
+    if (ok && wasDown && editor?.cur) editor.open(editor.cur.sheet, editor.cur.layer, { keepSelection: true });
+    wasDown = !ok;
   });
 }
 
@@ -151,7 +157,7 @@ function render() {
   const wantMode = state.status === 'RESULTS' || state.status === 'ARCHIVED' ? 'results' : 'play';
   if (mode !== wantMode) {
     mode = wantMode;
-    grid = null;
+    editor = null;
     if (wantMode === 'results') clear($('main'), h('div#results.wrap'));
     else clear($('main'), h('div.play', h('div#panel.panel'), h('div#sheetbox.sheetbox')));
   }
@@ -167,7 +173,8 @@ function renderRoute() {
   const lv = currentLevel();
   const completed = Object.fromEntries((state.levelDetails || []).map((l) => [l.level, l.teamCompleted]));
   clear(bar,
-    h('div.lvl-title', lv ? [h('span.line-chip', { style: { background: state.team.color } }, `L${lv.level}`), lv.title, h(`span.pill.${lv.phase === 'active' ? 'info' : ''}`, PHASE_LABEL[lv.phase])] : h('span.muted', '等候發車')),
+    h('div.lvl-title', lv ? [h('span.line-chip', { style: { background: state.team.color } }, `L${lv.level}`), lv.title, h(`span.pill.${lv.phase === 'active' ? 'info' : ''}`, PHASE_LABEL[lv.phase]),
+      activeTask[lv.level] ? h('span.pill', `現在：${activeTask[lv.level]}`) : null, h('small#savestate.muted', '')] : h('span.muted', '等候發車')),
     routeMap(state.levels, { color: state.team.color, done: (n) => !!completed[n], selected: viewLevel, onSelect: (n) => { viewLevel = n; renderPanel(); renderRoute(); } }),
     h('div'));
 }
@@ -175,7 +182,6 @@ function renderRoute() {
 function renderSheetBox() {
   const box = $('sheetbox');
   const wb = state.team.workbook;
-  const unlocked = (state.levelDetails || []).map((l) => l.sheet);
   if (!wb || wb.status !== 'READY') {
     clear(box, h('div.card', h('p.notice.warn', wb?.error || '你們的工作表尚未準備好，請等候老師。')));
     return;
@@ -187,23 +193,39 @@ function renderSheetBox() {
         new Character('chanding', { size: 120 }).el,
         h('h2', '你們的 Google Sheet'),
         h('a.btn.primary.big', { href: wb.url, target: '_blank', rel: 'noopener' }, '開啟我的 Google Sheet ↗'),
-        h('p', { style: { maxWidth: '520px' } }, '在 Google Sheets 的黃色儲存格輸入公式，完成後回到這裏按「檢查／提交」。網站會直接讀取你們的工作表（公式及結果），不需要在網頁再次輸入公式。'),
+        h('p', { style: { maxWidth: '520px' } }, '在 Google Sheets 的黃色儲存格輸入公式，完成後回到這裏按「檢查／提交」。'),
         h('p.muted', '請不要刪除工作表、插入或刪除列／欄，亦不要修改原始數據。')));
     }
     return;
   }
-  if (!grid) {
-    box.dataset.kind = 'demo';
-    clear(box, h('div#gridroot', { style: { height: '100%' } }));
-    grid = new SheetGrid($('gridroot'), {
-      load: (sheet) => api('GET', `/student/demo-sheet/${sheet}`),
-      edit: (sheet, edits) => api('POST', `/student/demo-sheet/${sheet}/edit`, { edits }),
-      paste: (sheet, source, target) => api('POST', `/student/demo-sheet/${sheet}/paste`, { source, target }),
-    });
+  const levels = state.levelDetails || [];
+  if (!levels.length) {
+    if (box.dataset.kind !== 'wait') { box.dataset.kind = 'wait'; editor = null; clear(box, h('div.card.sheet-wait', h('h2', '🧮 工作表'), h('p', '老師開始第 1 關後，你們隊的工作表會在這裏出現。'), h('p.muted', '所有作答都在這個網站完成，不需要開啟 Google Sheets。'))); }
+    return;
   }
-  const sheets = ['START', ...unlocked];
-  const active = (state.levelDetails || []).find((l) => l.phase === 'active');
-  if (grid.sheets.join() !== sheets.join()) grid.setSheets(sheets, active?.sheet || sheets.at(-1));
+  if (!editor) {
+    box.dataset.kind = 'builtin';
+    clear(box, h('div#editorroot', { style: { height: '100%' } }));
+    editor = new SheetEditor($('editorroot'), {
+      me: me.id,
+      load: (sheet, layer) => api('GET', `/sheet/${encodeURIComponent(sheet)}?layer=${encodeURIComponent(layer || 'main')}`),
+      send: (sheet, layer, ops) => api('POST', `/sheet/${encodeURIComponent(sheet)}/ops`, { layer, ops }),
+      presence: (sheet, layer, a, editing) => api('POST', `/sheet/${encodeURIComponent(sheet)}/presence`, { layer, a, editing }),
+      onSaveState: (st) => { const el = $('savestate'); if (el) { el.textContent = st === 'saved' ? '' : st === 'saving' ? '儲存中…' : '⚠ 未儲存'; } },
+    });
+    window.__tyEditor = editor;
+  }
+  const tabs = levels.map((l) => ({ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}`, title: l.sheet }));
+  for (const p of state.practice || []) tabs.push({ sheet: p.sheet, layer: p.reopenId, label: `📝 練習 ${p.taskId}`, practice: true, title: '練習模式：不影響分數' });
+  const active = levels.find((l) => l.phase === 'active');
+  const key = tabs.map((t) => `${t.sheet}|${t.layer}`).join(',');
+  if (editor.tabsKey !== key) {
+    editor.tabsKey = key;
+    editor.setTabs(tabs, active ? { sheet: active.sheet, layer: 'main' } : null);
+  }
+  // 題目狀態（開放／鎖定／完成）或暫停改變：更新可編輯範圍
+  const sig = JSON.stringify([state.paused, levels.map((l) => [l.level, l.phase, l.tasks.map((t) => t.state)]), (state.practice || []).map((p) => [p.reopenId, p.closed])]);
+  if (sig !== rulesSig) { const first = !rulesSig; rulesSig = sig; if (!first) editor.refreshRules(); }
 }
 
 function renderPanel() {
@@ -239,8 +261,8 @@ function renderPanel() {
     reactionBox(),
     h('div.card',
       h('div.task-tabs', tasks.map((t) => h(`button.task-tab${t.id === task.id ? '.on' : ''}${t.best === t.points ? '.done' : ''}${t.latest && t.latest.status === 'REJECTED' ? '.bad' : ''}`, {
-        type: 'button', onclick: () => { activeTask[lv.level] = t.id; renderPanel(); if (grid) grid.goto(lv.sheet, t.focus); },
-      }, t.bonus ? '★ Bonus' : t.id.split('-')[1], t.best === t.points ? ' ✓' : ''))),
+        type: 'button', onclick: () => { activeTask[lv.level] = t.id; renderPanel(); gotoTask(lv, t); },
+      }, t.state === 'locked' ? '🔒 ' : '', t.bonus ? '★ Bonus' : t.id.split('-')[1], t.best === t.points ? ' ✓' : ''))),
       taskCard(lv, task, canSubmit && !blockedByCaptain),
       blockedByCaptain ? h('p.notice.warn', '老師設定了只由隊長提交；你可以協助檢查及分析。') : null),
     story ? h('div.card', { style: { padding: '10px' } }, story) : null,
@@ -283,18 +305,32 @@ function react(kind) {
   setTimeout(() => { if (reaction && Date.now() > reaction.until) { reaction = null; renderPanel(); } }, 5200);
 }
 
+function gotoTask(lv, t) {
+  if (!editor) return;
+  const go = () => editor.focusTask(t);
+  if (editor.cur?.sheet !== lv.sheet || editor.cur?.layer !== 'main') editor.open(lv.sheet, 'main').then(go); else go();
+}
+
+const TASK_STATE = { active: ['info', '開放作答'], locked: ['', '🔒 未開放'], completed: ['ok', '✓ 已完成（已鎖定）'], closed: ['', '已截止'], reopened: ['warn', '老師已重開'] };
+
 function taskCard(lv, t, canSubmit) {
+  if (t.state === 'locked') {
+    return h('div.task', { style: { marginTop: '10px' }, id: `task-${t.id}` },
+      h('div.head', h('span.id', t.id), h('span.pill', '🔒 未開放')),
+      h('p.notice.info', '老師稍後會開放這一題。開放前不能編輯或提交。'));
+  }
+  canSubmit = canSubmit && (t.state === 'active' || t.state === 'completed');
   const latest = t.latest;
   const done = t.best === t.points;
   const mpState = (id) => (!latest?.markingPoints ? 'none' : latest.markingPoints.find((m) => m.id === id)?.passed ? 'pass' : 'fail');
   const statusPill = latest ? h(`span.pill.${latest.status === 'VERIFIED' ? 'ok' : ['RETRYABLE_ERROR', 'INTEGRITY_ERROR', 'DUPLICATE'].includes(latest.status) ? 'warn' : 'bad'}`, SUB_LABEL[latest.status] || latest.status) : null;
   return h(`div.task${done ? '.done' : ''}`, { style: { marginTop: '10px' }, id: `task-${t.id}` },
-    h('div.head', h('span.id', t.id), t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
+    h('div.head', h('span.id', t.id), t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), TASK_STATE[t.state] ? h(`span.pill.${TASK_STATE[t.state][0]}`, TASK_STATE[t.state][1]) : null, t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
     h('div.task-instr', richText(t.instruction)),
     h('div.submit-row',
       h('button.primary.big', { type: 'button', disabled: !canSubmit || pending[t.id] || t.cancelled, onclick: () => submit(t.id) }, pending[t.id] ? '⏳ 提交中…' : done ? '✓ 已核實（可再提交）' : '🚆 檢查／提交'),
-      grid ? h('button', { type: 'button', onclick: () => grid.goto(lv.sheet, t.focus) }, `前往 ${t.focus}`) : null),
-    h('small.muted', latest ? `上次提交：${new Date(latest.at).toLocaleTimeString('zh-HK', { hour12: false })}・已批改 ${t.attempts} 次` : '提交時系統會讀取工作表的公式及計算結果。'),
+      editor ? h('button', { type: 'button', onclick: () => gotoTask(lv, t) }, `前往 ${t.cells.join('、')}`) : null),
+    h('small.muted', latest ? `上次提交：${new Date(latest.at).toLocaleTimeString('zh-HK', { hour12: false })}・已批改 ${t.attempts} 次` : '提交時系統會讀取你們工作表的公式及計算結果，並以隱藏測試數據檢查。'),
     h('ul.mp', t.markingPoints.map((m) => h(`li.${done ? 'pass' : mpState(m.id)}`, `${m.label}（${m.max} 分）`))),
     latest?.message ? h(`div.notice.${latest.status === 'VERIFIED' ? 'ok' : 'warn'}`, latest.message) : null,
     latest?.errors?.length && latest.status !== 'VERIFIED' ? h('ul.feedback', latest.errors.map((e) => h('li', e.text))) : null,
@@ -304,6 +340,14 @@ function taskCard(lv, t, canSubmit) {
 async function submit(taskId) {
   pending[taskId] = true;
   renderPanel();
+  // 先確保工作表的修改已儲存，提交時伺服器才會讀到最新的公式
+  await editor?.flushNow();
+  if (editor?.pending.size) {
+    pending[taskId] = false;
+    renderPanel();
+    toast('工作表的修改仍未儲存（連線中斷），請稍候自動重試後再提交。', 'error', 7000);
+    return;
+  }
   const key = uuid();
   const lvBefore = currentLevel();
   let result = null;

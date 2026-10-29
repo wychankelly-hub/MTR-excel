@@ -128,6 +128,28 @@ test('伺服器在提交途中被強制終止：已回覆的答案不遺失、�
     }
   };
   const workers = students.map((S, w) => worker(S, w));
+  // 另一組學生（每隊一人）以內置工作表的版本化修改不停改寫 H3
+  const cellAcks = []; // { teamId, a, v, i }
+  const editorWorker = async (S, w) => {
+    const teamIdx = w % 6;
+    let n = 0;
+    while (!stop) {
+      const r = await withRetry(() => S('GET', '/api/sheet/L1_Fare'));
+      if (r.status !== 200) { await sleep(200); continue; }
+      const cur = r.body.cells.H3;
+      const input = `=SUM(F2:F21)+${w * 1000 + (++n)}`;
+      const res = await withRetry(() => S('POST', '/api/sheet/L1_Fare/ops', { layer: 'main', ops: [{ a: 'H3', i: input, base: cur?.v ?? 0 }] }));
+      if (res.status === 200) for (const x of res.body.applied) if (x.changed) cellAcks.push({ teamId: `t${teamIdx + 1}`, a: x.a, v: x.v, i: x.i });
+      await sleep(30 + Math.random() * 60);
+    }
+  };
+  const editors = [];
+  for (let i = 0; i < 6; i++) {
+    const S = agent(base);
+    await S('POST', '/api/auth/demo', { role: 'student', name: `Ed ${run} ${i}` });
+    await S('POST', '/api/student/join', { joinCode, teamId: `t${i + 1}` });
+    editors.push(editorWorker(S, i));
+  }
 
   // ---- 第一次強制終止（關卡計時中），離線 4 秒
   await sleep(2500);
@@ -163,7 +185,7 @@ test('伺服器在提交途中被強制終止：已回覆的答案不遺失、�
   assert.equal((await T('POST', `/api/teacher/competitions/${id}/resume`)).status, 200);
   await sleep(1500);
   stop = true;
-  await Promise.all(workers);
+  await Promise.all([...workers, ...editors]);
 
   // ---- 檢查（直接讀取資料庫）：已回覆的提交全部存在且只有一份
   const final = (await T('GET', `/api/teacher/competitions/${id}`)).body;
@@ -198,6 +220,23 @@ test('伺服器在提交途中被強制終止：已回覆的答案不遺失、�
   assert.ok(final.audit.some((a) => a.action === 'AUTO_PAUSE_RECOVERY'), '審計紀錄記錄自動暫停');
   const replays = acked.filter((a) => a.replayed).length;
 
+  // ---- 工作表修改：已回覆的版本全部存在於資料庫（ty_cells），版本號只會增加
+  const cdb = new pg.Client({ connectionString: DB });
+  await cdb.connect();
+  const rows = (await cdb.query('SELECT team_id, addr, input, ver FROM ty_cells WHERE comp_id = $1 AND sheet = $2', [id, 'L1_Fare'])).rows;
+  await cdb.end();
+  const dbCell = new Map(rows.map((r) => [`${r.team_id}:${r.addr}`, r]));
+  assert.ok(cellAcks.length >= 20, `應有足夠工作表修改（${cellAcks.length}）`);
+  const lastAck = new Map();
+  for (const x of cellAcks) {
+    const k = `${x.teamId}:${x.a}`;
+    const row = dbCell.get(k);
+    assert.ok(row && row.ver >= x.v, `已回覆的修改 ${k} v${x.v} 在資料庫中遺失`);
+    if (!lastAck.has(k) || lastAck.get(k).v < x.v) lastAck.set(k, x);
+  }
+  // 版本號相同 → 內容必須相同（之後的較新版本可能來自同隊其他學生的提交流程）
+  for (const [k, x] of lastAck) if (dbCell.get(k).ver === x.v) assert.equal(dbCell.get(k).input, x.i, `${k} 最後確認的內容`);
+
   // ---- 再強制終止一次：資料庫內容與記憶體完全一致（所有已回覆的改變都已寫入）
   srv.child.kill('SIGKILL');
   await srv.exited;
@@ -225,5 +264,5 @@ test('伺服器在提交途中被強制終止：已回覆的答案不遺失、�
   srv.child.kill('SIGTERM');
   fresh.child.kill('SIGTERM');
   await Promise.all([srv.exited, fresh.exited]);
-  console.log(`  已回覆提交 ${acked.length}（其中重試後重播 ${replays}）、暫停期間被拒 ${pausedRejects.length}、資料庫提交紀錄 ${subs.length}`);
+  console.log(`  已回覆提交 ${acked.length}（其中重試後重播 ${replays}）、暫停期間被拒 ${pausedRejects.length}、資料庫提交紀錄 ${subs.length}、已確認工作表修改 ${cellAcks.length}`);
 });

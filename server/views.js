@@ -8,7 +8,7 @@ import { LEVELS, LEVEL_BY_NUM, publicLevel, ROLE_LABELS, SKILLS, TASKS } from '.
 import { STORY_CLUES, AUDIO_EVENTS, AUDIO_EVENT_BY_ID } from './episode1/dialogue.js';
 import { CONCEPTS, REVIEW_CARDS, ERRORS } from './episode1/feedback.js';
 import { rankTeams, computeTeamScore, breakdownLines, RULES } from './scoring.js';
-import { levelTiming, publicRankRow, untaughtFor, audioAllowed, audioOutput } from './competition.js';
+import { levelTiming, publicRankRow, untaughtFor, audioAllowed, audioOutput, teamTaskState, isBuiltin } from './competition.js';
 import { submissionSummary } from './submission.js';
 import { googleCredentialStatus } from './adapters/google-adapter.js';
 import { features } from './config.js';
@@ -39,7 +39,8 @@ export function publicView(comp) {
     id: comp.id,
     title: comp.title,
     classCode: comp.classCode,
-    demo: comp.adapter === 'demo',
+    demo: false,
+    builtin: isBuiltin(comp),
     adapter: comp.adapter,
     status: comp.status,
     paused: comp.paused,
@@ -98,10 +99,15 @@ export function studentView(comp, user) {
     const ls = score.levels[lv.level];
     pl.phase = l.phase;
     pl.tasks = pl.tasks.map((t) => {
-      const mine = subs.filter((s) => s.taskId === t.id);
+      const mine = subs.filter((s) => s.taskId === t.id && !s.practice);
       const latest = mine.at(-1);
+      const st = teamTaskState(comp, team, t.id);
+      // 老師未開放的題目：只顯示題號，不提前公開題目內容
+      if (st.state === 'locked') return { id: t.id, cells: t.cells, focus: t.focus, points: t.points, bonus: t.bonus, state: 'locked', instruction: null, markingPoints: [], best: 0, latest: null, attempts: 0 };
       return {
         ...t,
+        state: st.reopen ? 'reopened' : st.state,
+        reopen: st.reopen,
         cancelled: cancelled.includes(t.id),
         best: ls.best[t.id] ?? 0,
         latest: latest ? submissionSummary(latest) : null,

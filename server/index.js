@@ -13,6 +13,8 @@ import {
 import * as C from './competition.js';
 import { clock } from './clock.js';
 import { submitTask } from './submission.js';
+import * as sheets from './sheets.js';
+import { episodeOf } from './episodes/index.js';
 import { publicView, studentView, teacherView, resultsCsv, toCsv } from './views.js';
 import { addClient, clientCount } from './realtime.js';
 import { bus } from './bus.js';
@@ -38,6 +40,8 @@ export function createApp() {
     app.get(`/${page}`, (req, res) => res.sendFile(path.join(pub, `${page}.html`)));
   }
   app.use(express.static(pub, { extensions: ['html'], maxAge: 0 }));
+  // 公式引擎同時供瀏覽器使用（學生工作表即時計算；批改仍在伺服器）
+  app.use('/engine', express.static(path.join(ROOT, 'server', 'engine'), { maxAge: 0 }));
 
   // 雲端資產（老師上載的錄音、角色圖片、重新合成的配音）—— 存放在資料庫
   app.get(/^\/media\/(.+)$/, async (req, res) => {
@@ -302,39 +306,95 @@ export function createApp() {
     res.json(C.requestHint(comp, u, team, req.body?.level));
   });
 
-  // Demo 模擬工作表（只在 Demo 比賽可用）
-  const demoTeam = (req) => {
+  // ------------------------------------------------------------ 內置工作表
+  // 隊伍一律由伺服器按登入身份決定；網址或參數中的隊伍／比賽編號都不會被採用。
+  const sheetTeam = (req) => {
     const { u, comp } = studentComp(req);
-    if (comp.adapter !== 'demo') throw new HttpError(400, '此比賽使用真實 Google Sheets，請在 Google Sheets 作答。');
+    if (!C.isBuiltin(comp)) throw new HttpError(400, '此比賽使用 Google Sheets，請在 Google Sheets 作答。', 'NOT_BUILTIN');
     const team = C.teamOfUser(comp, u.id);
-    if (!team) throw new HttpError(403, '你未加入任何隊伍。');
+    if (!team) throw new HttpError(403, '你未分配到任何隊伍，請等候老師分隊。', 'NO_TEAM');
     if (team.workbook?.status !== 'READY') throw new HttpError(409, '工作表尚未準備好，請等候老師。');
-    const unlocked = LEVELS.filter((l) => comp.levels[l.level].startedAt).map((l) => l.level);
+    const unlocked = episodeOf(comp).levels.filter((l) => comp.levels[l.level].startedAt).map((l) => l.level);
     return { u, comp, team, unlocked };
   };
-  api.get('/student/demo-sheet/:sheet', (req, res) => {
-    const { comp, team, unlocked } = demoTeam(req);
-    res.json(C.adapters.demo.sheetView(comp, team, req.params.sheet, { unlockedLevels: unlocked }));
-  });
-  const editAllowed = (comp, sheet, unlocked) => {
-    const lv = LEVELS.find((l) => l.sheet === sheet);
-    if (!lv || !unlocked.includes(lv.level)) throw new HttpError(403, '此關尚未開始。');
-    if (comp.levels[lv.level].phase !== 'active') throw new HttpError(409, '此關已截止，工作表已鎖定。');
+  const visibleLevel = (comp, team, sheet, layer, unlocked) => {
+    const lv = sheets.levelForSheet(comp, sheet);
+    if (!lv) throw new HttpError(404, '沒有此工作表。', 'NO_SHEET');
+    // 練習副本：老師為本隊重開的題目（即使該關已結束）
+    if (layer && layer !== sheets.MAIN) {
+      const r = (comp.reopens || []).find((x) => x.id === layer);
+      if (!r || !r.teamIds.includes(team.id) || r.mode !== 'practice' || episodeOf(comp).taskById[r.taskId]?.level !== lv.level) throw new HttpError(403, '沒有此練習，或練習不屬於你的隊伍。', 'NO_PRACTICE');
+      return lv;
+    }
+    const makeup = C.openReopens(comp, team.id).some((r) => r.mode === 'makeup' && episodeOf(comp).taskById[r.taskId]?.level === lv.level);
+    if (!unlocked.includes(lv.level) && !makeup) throw new HttpError(403, '此關尚未開始。', 'LEVEL_LOCKED');
+    return lv;
   };
-  api.post('/student/demo-sheet/:sheet/edit', (req, res) => {
-    const { u, comp, team, unlocked } = demoTeam(req);
-    editAllowed(comp, req.params.sheet, unlocked);
-    const edits = Array.isArray(req.body?.edits) ? req.body.edits.slice(0, 600) : [];
-    C.adapters.demo.applyEdits(comp, team, req.params.sheet, edits);
-    bus.emit('sheet', comp.id, team.id, req.params.sheet, u.id);
+  const layerOf = (req) => {
+    const l = String(req.query.layer || req.body?.layer || sheets.MAIN);
+    return /^[A-Za-z0-9_-]{1,40}$/.test(l) ? l : sheets.MAIN;
+  };
+  api.get('/sheet/:sheet', (req, res) => {
+    const { u, comp, team, unlocked } = sheetTeam(req);
+    const layer = layerOf(req);
+    visibleLevel(comp, team, req.params.sheet, layer, unlocked);
+    res.json({ ...sheets.sheetPayload(comp, team, req.params.sheet, layer, { viewer: u }), me: u.id });
+  });
+  api.post('/sheet/:sheet/ops', async (req, res) => {
+    const { u, comp, team, unlocked } = sheetTeam(req);
+    const layer = layerOf(req);
+    visibleLevel(comp, team, req.params.sheet, layer, unlocked);
+    const ops = Array.isArray(req.body?.ops) ? req.body.ops : [];
+    const r = sheets.applyOps(comp, team, u, req.params.sheet, layer, ops);
+    // 先確認寫入資料庫，才通知隊友及回覆（已回覆的修改不會因伺服器重新啟動而遺失）
+    if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存資料，系統會自動重試。', 'NOT_SAVED');
+    sheets.broadcastOps(comp, team, u, req.params.sheet, layer, r.applied);
+    res.json(r);
+  });
+  api.post('/sheet/:sheet/presence', (req, res) => {
+    const { u, comp, team, unlocked } = sheetTeam(req);
+    const layer = layerOf(req);
+    visibleLevel(comp, team, req.params.sheet, layer, unlocked);
+    const a = String(req.body?.a || '').toUpperCase();
+    if (/^[A-Z]{1,3}[0-9]{1,5}(:[A-Z]{1,3}[0-9]{1,5})?$/.test(a) || a === '') {
+      bus.emit('presence', comp.id, team.id, { sheet: req.params.sheet, layer, a, editing: !!req.body?.editing, user: { id: u.id, name: u.name }, at: clock.now() });
+    }
+    res.json({ ok: true });
+  });
+
+  // 舊介面（保留相容）：伺服器計算後的顯示值、沒有版本號的修改
+  api.get('/student/demo-sheet/:sheet', (req, res) => {
+    const { comp, team, unlocked } = sheetTeam(req);
     res.json(C.adapters.demo.sheetView(comp, team, req.params.sheet, { unlockedLevels: unlocked }));
   });
-  api.post('/student/demo-sheet/:sheet/paste', (req, res) => {
-    const { u, comp, team, unlocked } = demoTeam(req);
-    editAllowed(comp, req.params.sheet, unlocked);
-    C.adapters.demo.copyPaste(comp, team, req.params.sheet, String(req.body?.source || ''), String(req.body?.target || ''));
-    bus.emit('sheet', comp.id, team.id, req.params.sheet, u.id);
+  const legacyEdit = (req, fn) => {
+    const { u, comp, team, unlocked } = sheetTeam(req);
+    visibleLevel(comp, team, req.params.sheet, sheets.MAIN, unlocked);
+    const lv = sheets.levelForSheet(comp, req.params.sheet);
+    if (comp.levels[lv.level].phase !== 'active' && !C.openReopens(comp, team.id).some((r) => r.mode === 'makeup')) throw new HttpError(409, '此關已截止，工作表已鎖定。');
+    const r = fn(u, comp, team);
+    return { u, comp, team, unlocked, r };
+  };
+  api.post('/student/demo-sheet/:sheet/edit', async (req, res) => {
+    const edits = Array.isArray(req.body?.edits) ? req.body.edits.slice(0, 600) : [];
+    const { u, comp, team, unlocked, r } = legacyEdit(req, (u2, comp2, team2) => C.adapters.demo.applyEdits(comp2, team2, req.params.sheet, edits, u2));
+    if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存資料，系統會自動重試。', 'NOT_SAVED');
+    sheets.broadcastOps(comp, team, u, req.params.sheet, sheets.MAIN, r.applied);
     res.json(C.adapters.demo.sheetView(comp, team, req.params.sheet, { unlockedLevels: unlocked }));
+  });
+  api.post('/student/demo-sheet/:sheet/paste', async (req, res) => {
+    const { u, comp, team, unlocked, r } = legacyEdit(req, (u2, comp2, team2) => C.adapters.demo.copyPaste(comp2, team2, req.params.sheet, String(req.body?.source || ''), String(req.body?.target || ''), u2));
+    if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存資料，系統會自動重試。', 'NOT_SAVED');
+    sheets.broadcastOps(comp, team, u, req.params.sheet, sheets.MAIN, r.applied);
+    res.json(C.adapters.demo.sheetView(comp, team, req.params.sheet, { unlockedLevels: unlocked }));
+  });
+
+  // 老師：任何一隊的工作表（唯讀，即時更新）
+  api.get('/teacher/competitions/:id/sheet/:teamId/:sheet', (req, res) => {
+    const { t, comp } = owned(req);
+    const team = C.getTeam(comp, req.params.teamId);
+    const layer = layerOf(req);
+    res.json({ ...sheets.sheetPayload(comp, team, req.params.sheet, layer, { viewer: t }), readOnly: true });
   });
 
   // ------------------------------------------------------------ 投影
@@ -409,6 +469,8 @@ export function startServer(port = config.port) {
     if (live) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
   }, 10 * 60 * 1000) : null;
   init().then(() => {
+    const moved = sheets.migrateLegacySheets();
+    if (moved) { console.log(`已把 ${moved} 格舊版工作表作答轉為逐格儲存（舊紀錄保留）`); save(); }
     for (const r of C.recoverAfterRestart(db.lastAliveAt)) {
       console.log(`⏸ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關已自動暫停（中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回）`);
     }

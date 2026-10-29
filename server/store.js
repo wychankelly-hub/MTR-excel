@@ -18,7 +18,8 @@ const empty = () => ({
   users: {},
   sessions: {},
   competitions: {},
-  demoSheets: {}, // compId -> teamId -> sheet -> { addr: input }
+  demoSheets: {}, // 舊版（只讀保留）：compId -> teamId -> sheet -> { addr: input }；啟動時轉移到 cells
+  cells: {}, // 內置工作表：compId -> teamId -> sheetKey -> addr -> { i: 輸入, v: 版本, by: 使用者, at: 時間 }
   audioAssets: {}, // lineId -> { status, reviewedBy, reviewedAt }
   googleOAuth: null, // { refreshToken, email, connectedAt }
   heartbeat: null, // { at } 比賽進行中每 5 秒更新：重新啟動時用來計算伺服器中斷了多久
@@ -35,7 +36,10 @@ const instanceId = `${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
 // 只檢查有改變的部分：competition:<id>、demoSheets:<id>；不指明時檢查全部
 let dirtyAll = true;
 const dirty = new Set();
-const stats = { since: Date.now(), writes: 0, keysWritten: 0, bytesWritten: 0, bytesRead: 0, failures: 0, lastWriteMs: null };
+// 試算表儲存格逐格寫入（資料庫模式：ty_cells 表，每格一行；不會因一格改變而重寫整份工作表）
+const dirtyCells = new Set(); // `${compId}\u0001${teamId}\u0001${sheet}\u0001${addr}`
+const dirtyCellDeletes = new Set(); // compId（刪除整場比賽的儲存格）
+const stats = { since: Date.now(), writes: 0, keysWritten: 0, cellsWritten: 0, bytesWritten: 0, bytesRead: 0, failures: 0, lastWriteMs: null };
 // 提交紀錄及審計紀錄分段儲存：每次只需寫入核心資料及最新一段，而不是整個比賽紀錄
 const SUB_CHUNK = 25;
 const AUDIT_CHUNK = 100;
@@ -85,6 +89,7 @@ export async function init() {
   pool = new pg.Pool({ connectionString: config.databaseUrl, ssl: sslFor(config.databaseUrl), max: 5, idleTimeoutMillis: 30000 });
   pool.on('error', (e) => console.error('資料庫連線錯誤：', e.message));
   await pool.query(`CREATE TABLE IF NOT EXISTS ty_kv (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ty_cells (comp_id TEXT NOT NULL, team_id TEXT NOT NULL, sheet TEXT NOT NULL, addr TEXT NOT NULL, input JSONB, ver INTEGER NOT NULL, by_user TEXT, at BIGINT, PRIMARY KEY (comp_id, team_id, sheet, addr))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ty_assets (path TEXT PRIMARY KEY, content_type TEXT NOT NULL, data BYTEA NOT NULL, size INTEGER NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
   // 先「接手」資料庫才讀取：之後舊實例（例如重新部署時仍在運行的舊版本）的寫入會被拒絕，
   // 避免兩個實例互相覆蓋。舊實例正在進行的寫入會先完成（行鎖），所以這裏讀到的是最新資料。
@@ -116,6 +121,11 @@ export async function init() {
     core.audit ??= [];
     state.competitions[id] = core;
   }
+  const cellRows = await pool.query('SELECT comp_id, team_id, sheet, addr, input, ver, by_user, at FROM ty_cells');
+  for (const r of cellRows.rows) {
+    ((((state.cells[r.comp_id] ??= {})[r.team_id] ??= {})[r.sheet] ??= {}))[r.addr] = { i: r.input, v: r.ver, by: r.by_user, at: Number(r.at) || null };
+    stats.bytesRead += 40 + JSON.stringify(r.input).length;
+  }
   db.state = state;
   db.lastAliveAt = Math.max(state.heartbeat?.at || 0, lastWrite) || null;
   const a = await pool.query('SELECT path, content_type, size, extract(epoch from updated_at)*1000 AS v FROM ty_assets');
@@ -130,8 +140,35 @@ let timer = null;
 export function save(group) {
   if (group) dirty.add(group);
   else dirtyAll = true;
+  scheduleFlush();
+}
+
+function scheduleFlush() {
   if (timer) return;
   timer = setTimeout(() => { timer = null; flush(); }, 150);
+}
+
+/** 取得某隊某工作表（或練習副本）的儲存格；create=false 時不存在則回傳 null */
+export function cellBook(compId, teamId, sheet, create = true) {
+  const c = db.state.cells;
+  if (!create) return c[compId]?.[teamId]?.[sheet] || null;
+  return (((c[compId] ??= {})[teamId] ??= {})[sheet] ??= {});
+}
+
+/** 寫入一格（entry 為 null 表示清除，但仍保留版本號以防覆蓋衝突） */
+export function putCell(compId, teamId, sheet, addr, entry) {
+  cellBook(compId, teamId, sheet)[addr] = entry;
+  dirtyCells.add([compId, teamId, sheet, addr].join('\u0001'));
+  if (db.driver !== 'postgres') save('cells');
+  else scheduleFlush();
+}
+
+export function deleteCompCells(compId) {
+  delete db.state.cells[compId];
+  dirtyCellDeletes.add(compId);
+  for (const k of [...dirtyCells]) if (k.startsWith(`${compId}\u0001`)) dirtyCells.delete(k);
+  if (db.driver !== 'postgres') save();
+  else scheduleFlush();
 }
 
 /** 伺服器仍在運行（比賽進行中每 5 秒）：寫入一個很小的紀錄 */
@@ -201,9 +238,19 @@ export function flush() {
     if (lastSaved.get(k) !== json) changes.push([k, json]);
   }
   const removed = all ? [...lastSaved.keys()].filter((k) => !keys.has(k)) : [];
-  if (!changes.length && !removed.length) return writing;
+  const cellKeys = [...dirtyCells];
+  dirtyCells.clear();
+  const cellDeletes = [...dirtyCellDeletes];
+  dirtyCellDeletes.clear();
+  if (!changes.length && !removed.length && !cellKeys.length && !cellDeletes.length) return writing;
   for (const [k, json] of changes) lastSaved.set(k, json);
   for (const k of removed) lastSaved.delete(k);
+  // 寫入一刻的儲存格內容（之後再改會再標記，按次序寫入）
+  const cellRows = cellKeys.map((k) => {
+    const [c, t, sh, a] = k.split('\u0001');
+    const e = db.state.cells[c]?.[t]?.[sh]?.[a];
+    return [c, t, sh, a, JSON.stringify(e?.i ?? null), e?.v ?? 0, e?.by ?? null, e?.at ?? null];
+  });
   writing = writing.then(async () => {
     let client = null;
     const t0 = Date.now();
@@ -223,15 +270,27 @@ export function flush() {
         bytes += json.length;
       }
       if (removed.length) await client.query('DELETE FROM ty_kv WHERE key = ANY($1)', [removed]);
+      if (cellRows.length) {
+        const col = (i) => cellRows.map((r) => r[i]);
+        await client.query(`INSERT INTO ty_cells (comp_id, team_id, sheet, addr, input, ver, by_user, at)
+          SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::jsonb[], $6::int[], $7::text[], $8::bigint[])
+          ON CONFLICT (comp_id, team_id, sheet, addr) DO UPDATE SET input = EXCLUDED.input, ver = EXCLUDED.ver, by_user = EXCLUDED.by_user, at = EXCLUDED.at`,
+        [col(0), col(1), col(2), col(3), col(4), col(5), col(6), col(7)]);
+        bytes += cellRows.reduce((n, r) => n + r[4].length + 40, 0);
+      }
+      if (cellDeletes.length) await client.query('DELETE FROM ty_cells WHERE comp_id = ANY($1)', [cellDeletes]);
       await client.query('COMMIT');
       stats.writes += 1;
       stats.keysWritten += changes.length;
+      stats.cellsWritten += cellRows.length;
       stats.bytesWritten += bytes;
       stats.lastWriteMs = Date.now() - t0;
       return true;
     } catch (e) {
       await client?.query('ROLLBACK').catch(() => {});
       for (const [k] of changes) lastSaved.delete(k); // 下次重試
+      for (const k of cellKeys) dirtyCells.add(k);
+      for (const c of cellDeletes) dirtyCellDeletes.add(c);
       stats.failures += 1;
       dirtyAll = true;
       if (e.fenced) {
@@ -259,7 +318,7 @@ export async function persistNow() {
   for (let i = 0; i < 3; i++) {
     const ok = await flush();
     if (db.fenced) return false;
-    if (ok && !dirtyAll && dirty.size === 0) return true;
+    if (ok && !dirtyAll && dirty.size === 0 && dirtyCells.size === 0 && dirtyCellDeletes.size === 0) return true;
   }
   return false;
 }

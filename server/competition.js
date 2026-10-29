@@ -15,6 +15,9 @@ import { resolvedEvent } from './audio-assets.js';
 import { DemoAdapter } from './adapters/demo-adapter.js';
 import { GoogleAdapter } from './adapters/google-adapter.js';
 import { rankTeams, computeTeamScore } from './scoring.js';
+import { episodeOf } from './episodes/index.js';
+import { configureSheets, MAIN, forgetComp as forgetSheets } from './sheets.js';
+import { expandRange } from './engine/refs.js';
 
 export const STATUS = {
   DRAFT: 'DRAFT', PREFLIGHT: 'PREFLIGHT', APPROVED: 'APPROVED', LOBBY: 'LOBBY',
@@ -54,10 +57,87 @@ export const adapters = {
   demo: new DemoAdapter(getDataset),
   google: new GoogleAdapter(getDataset),
 };
+adapters.builtin = adapters.demo; // 內置工作表（舊比賽的 'demo' 與新比賽的 'builtin' 使用同一套內置工作表）
 
 export function adapterFor(comp) {
   return adapters[comp.adapter];
 }
+
+export const isBuiltin = (comp) => comp.adapter === 'demo' || comp.adapter === 'builtin';
+
+// ------------------------------------------------------------------ 題目狀態（伺服器端強制執行）
+// 全班狀態：locked（未開始／老師鎖定）→ active（開放作答）→ closed（時間到／該關結束）
+// 每隊狀態：在 active 之上，已全對的題目會鎖定（completed）；老師可為個別隊伍重開（reopened）。
+export function taskPhase(comp, task) {
+  if (task.level === undefined) task = episodeOf(comp).taskById[task.id];
+  const l = comp.levels[task.level];
+  if (!l || l.phase === 'pending') return 'locked';
+  if (l.phase !== 'active') return 'closed';
+  if (task.bonus && !comp.settings.bonusEnabled) return 'locked';
+  return comp.taskOverrides?.[task.id] === 'locked' ? 'locked' : 'active';
+}
+
+export function teamBest(comp, teamId, taskId) {
+  let best = 0;
+  for (const s of comp.submissions) {
+    if (s.teamId === teamId && s.taskId === taskId && !s.practice && s.status === 'VERIFIED') best = Math.max(best, s.earned || 0);
+  }
+  return best;
+}
+
+export function openReopens(comp, teamId, taskId = null) {
+  return (comp.reopens || []).filter((r) => !r.closedAt && r.teamIds.includes(teamId) && (!taskId || r.taskId === taskId));
+}
+
+/** 某隊某題目前的狀態：locked / active / completed / closed / reopened（練習或補做） */
+export function teamTaskState(comp, team, task) {
+  const ep = episodeOf(comp);
+  const t = typeof task === 'string' ? ep.taskById[task] : task;
+  const phase = taskPhase(comp, t);
+  const completed = teamBest(comp, team.id, t.id) >= t.points;
+  const reopen = openReopens(comp, team.id, t.id)[0] || null;
+  let state = phase;
+  if (phase === 'active' && completed && comp.settings.lockOnComplete !== false) state = 'completed';
+  else if (phase === 'closed' && completed) state = 'completed';
+  return { taskId: t.id, phase, state, completed, reopen: reopen ? { id: reopen.id, mode: reopen.mode } : null };
+}
+
+/**
+ * 某隊在某工作表（正式作答或練習副本）目前可以編輯的儲存格。
+ * 學生的每次修改都會經過這裏檢查；網址或參數不能繞過。
+ */
+export function editRulesFor(comp, team, level, layer = MAIN) {
+  const ep = episodeOf(comp);
+  const lv = ep.levelByNum[level];
+  const editable = new Set();
+  const answer = new Set(lv.editable.flatMap(expandRange));
+  const tasks = [];
+  let layerReopen = null;
+  if (layer && layer !== MAIN) {
+    layerReopen = (comp.reopens || []).find((r) => r.id === layer) || null;
+    if (!layerReopen || layerReopen.mode !== 'practice' || !layerReopen.teamIds.includes(team.id) || ep.taskById[layerReopen.taskId]?.level !== level) {
+      throw new HttpError(403, '沒有此練習，或練習不屬於你的隊伍。', 'NO_PRACTICE');
+    }
+  }
+  for (const raw of lv.tasks) {
+    const t = ep.taskById[raw.id];
+    const st = teamTaskState(comp, team, t);
+    let open = false;
+    if (layerReopen) open = !layerReopen.closedAt && layerReopen.taskId === t.id;
+    else if (st.reopen?.mode === 'makeup') open = true;
+    else open = st.state === 'active';
+    if (comp.paused) open = false;
+    if (open) for (const a of t.cells.flatMap(expandRange)) editable.add(a);
+    tasks.push({ id: t.id, cells: t.cells, bonus: !!t.bonus, state: layerReopen ? (layerReopen.taskId === t.id ? (layerReopen.closedAt ? 'closed' : 'practice') : 'locked') : st.reopen ? 'reopened' : st.state, editable: open });
+  }
+  return {
+    editable,
+    tasks,
+    reasonFor: (a) => (!answer.has(a) ? 'PROTECTED' : comp.paused ? 'PAUSED' : 'LOCKED'),
+  };
+}
+
+configureSheets({ episode: episodeOf, dataset: (comp, team) => getDataset(comp, team), rules: editRulesFor });
 
 // ------------------------------------------------------------------ 工具
 export function getComp(id) {
@@ -116,7 +196,8 @@ function isRunning(comp) {
 export function createCompetition(teacher, opts = {}) {
   const teamCount = Number(opts.teamCount ?? 6);
   if (!(teamCount >= 4 && teamCount <= 7)) throw new HttpError(400, '隊伍數目須為 4–7 隊。');
-  const adapter = opts.adapter === 'google' ? 'google' : 'demo';
+  // 新比賽預設使用內置工作表（'builtin'）；Google Sheets 只保留作舊模式
+  const adapter = opts.adapter === 'google' ? 'google' : opts.adapter === 'demo' ? 'demo' : 'builtin';
   if (adapter === 'google' && teacher.provider === 'demo') throw new HttpError(400, 'Demo 老師帳戶只可以建立 Demo 比賽；正式 Google Sheets 比賽需要以 Google 登入。');
   const id = `c_${randCode(10, 'abcdefghijkmnpqrstuvwxyz23456789')}`;
   let joinCode = randCode(6);
@@ -127,7 +208,7 @@ export function createCompetition(teacher, opts = {}) {
     title: String(opts.title || '定過抬油：站長爭奪戰 E1').slice(0, 80),
     classCode: String(opts.classCode || '').replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20),
     adapter,
-    demo: adapter === 'demo',
+    demo: false,
     joinCode,
     projectorKey: randCode(16),
     ownerId: teacher.id,
@@ -144,6 +225,7 @@ export function createCompetition(teacher, opts = {}) {
       bonusEnabled: !!opts.bonusEnabled,
       maxTeamSize: 5,
       captainOnlySubmit: !!opts.captainOnlySubmit,
+      lockOnComplete: opts.lockOnComplete !== false, // 全對的題目鎖定（避免之後誤改）
       // 分隊：'teacher' = 學生加入後由老師分隊；'student' = 學生加入時自選一次（之後只有老師可以轉隊）
       teamSelection: opts.teamSelection === 'teacher' ? 'teacher' : 'student',
       // 只容許名單內的 Google 帳戶／網域加入（留空 = 不限制）
@@ -167,7 +249,9 @@ export function createCompetition(teacher, opts = {}) {
     adjustments: [],
     cancelledTasks: [],
     audio: { seq: 0, log: [], projector: null, onlyApproved: null },
-    health: { sheets: adapter === 'demo' ? 'Ready' : 'Unavailable', sheetsFailures: 0, lastSheetsError: null },
+    health: { sheets: adapter === 'google' ? 'Unavailable' : 'Ready', sheetsFailures: 0, lastSheetsError: null },
+    taskOverrides: {}, // taskId -> 'locked'（老師在進行中的關卡暫時鎖定某題）
+    reopens: [], // 重開題目（練習／補做）
     audit: [],
   };
   db.state.competitions[id] = comp;
@@ -327,7 +411,7 @@ export async function approve(comp, teacher) {
   comp.status = STATUS.APPROVED;
   audit(comp, teacher, 'APPROVE_DATASETS', { fingerprint: comp.approval.fingerprint });
   changed(comp, 'approve');
-  if (comp.adapter === 'demo') await provisionAll(comp, teacher);
+  if (isBuiltin(comp)) await provisionAll(comp, teacher);
   return comp.approval;
 }
 
@@ -763,6 +847,7 @@ export function deleteCompetition(comp, teacher) {
   requireOwner(comp, teacher);
   if (![STATUS.ARCHIVED, STATUS.CANCELLED, STATUS.DRAFT, STATUS.PREFLIGHT].includes(comp.status)) throw new HttpError(409, '請先封存或取消比賽，再刪除資料。');
   adapters.demo.forget(comp);
+  forgetSheets(comp.id);
   delete db.state.competitions[comp.id];
   datasetCache.delete(comp.id);
   save();
