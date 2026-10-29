@@ -185,6 +185,8 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
     // 重新整理不會重播已播放的音效
     await A2.reload();
     await A2.waitForSelector('.se-table');
+    // 重新整理後，隊伍已確認的作答仍在
+    await A2.waitForFunction(() => window.__tyEditor?.inputOf('D21') === '=B21*C21*$H$1' && window.__tyEditor?.inputOf('H3') === '=SUM(F2:F21)', null, { timeout: 10000 });
     await A2.click('body');
     await A2.waitForTimeout(1500);
     assert.deepEqual(await sfxKinds(A2), [], '重新整理後沒有重播');

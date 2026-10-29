@@ -514,9 +514,13 @@ export function startServer(port = config.port) {
     const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED|RESULTS)/.test(c.status));
     if (live) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
   }, 10 * 60 * 1000) : null;
-  init().then(() => {
+  init().then(async () => {
     const moved = sheets.migrateLegacySheets();
-    if (moved) { console.log(`已把 ${moved} 格舊版工作表作答轉為逐格儲存（舊紀錄保留）`); save(); }
+    if (moved) {
+      save();
+      await persistNow();
+      console.log(`已把 ${moved} 格舊版工作表作答轉為逐格儲存（舊紀錄保留）`);
+    }
     for (const r of C.recoverAfterRestart(db.lastAliveAt)) {
       console.log(`⏸ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關已自動暫停（中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回）`);
     }
