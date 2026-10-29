@@ -1,6 +1,6 @@
 // 計分（§8）。分數完全由伺服器核實的提交紀錄、提示紀錄及人工調整「推導」出來：
 // 相同紀錄必得相同分數，重送同一提交不會重複加分（冪等）。
-import { LEVELS, LEVEL_BY_NUM, requiredTasks, levelMaxPoints } from './episode1/blueprint.js';
+import { episodeOf } from './episodes/index.js';
 
 export const RULES = {
   baseMax: 500,
@@ -21,14 +21,15 @@ export function computeTeamScore(comp, teamId) {
   // 練習提交不計分；補做提交只影響基礎分（不計速度獎勵、錯誤不扣分）
   const subs = comp.submissions.filter((s) => s.teamId === teamId && GRADED.has(s.status) && !s.practice && !cancelled.includes(s.taskId))
     .sort((a, b) => a.at - b.at || a.seq - b.seq);
+  const ep = episodeOf(comp);
   const levels = {};
   let lastImproveAt = null;
   let hintsTotal = 0;
   const completedSet = new Set();
-  for (const lv of LEVELS) {
+  for (const lv of ep.levels) {
     const n = lv.level;
-    const req = requiredTasks(n, cancelled);
-    const maxPts = levelMaxPoints(n, cancelled);
+    const req = ep.requiredTasks(n, cancelled);
+    const maxPts = ep.levelMaxPoints(n, cancelled);
     const best = {};
     const first = {};
     let completedAt = null;
@@ -56,7 +57,7 @@ export function computeTeamScore(comp, teamId) {
     const hints = (comp.hintUses || []).filter((h) => h.teamId === teamId && h.level === n).length;
     hintsTotal += hints;
     const hintPenalty = (hints >= 1 ? RULES.hint1 : 0) + (hints >= 2 ? RULES.hint2 : 0);
-    const wrongCount = subs.filter((s) => s.level === n && s.status === 'REJECTED' && !s.noPenalty && !LEVEL_BY_NUM[n].tasks.find((t) => t.id === s.taskId)?.bonus).length;
+    const wrongCount = subs.filter((s) => s.level === n && s.status === 'REJECTED' && !s.noPenalty && !ep.levelByNum[n].tasks.find((t) => t.id === s.taskId)?.bonus).length;
     const wrongPenalty = Math.min(RULES.wrongCap, wrongCount * RULES.wrongEach);
     const bonusTask = lv.tasks.find((t) => t.bonus);
     const bonus = comp.settings.bonusEnabled && bonusTask && !cancelled.includes(bonusTask.id) && (best[bonusTask.id] ?? 0) === bonusTask.points ? RULES.bonusMission : 0;
@@ -69,7 +70,7 @@ export function computeTeamScore(comp, teamId) {
       tasksDone: req.filter((t) => (best[t.id] ?? 0) === t.points).length, tasksTotal: req.length,
     };
   }
-  const combo = [1, 2, 3].some((n) => completedSet.has(n) && completedSet.has(n + 1) && completedSet.has(n + 2)) ? RULES.combo : 0;
+  const combo = ep.levels.some((lv) => completedSet.has(lv.level) && completedSet.has(lv.level + 1) && completedSet.has(lv.level + 2)) ? RULES.combo : 0;
   const manual = (comp.adjustments || []).filter((a) => a.teamId === teamId).reduce((s, a) => s + a.delta, 0);
   const levelSum = Object.values(levels).reduce((s, l) => s + l.total, 0);
   const baseTotal = Object.values(levels).reduce((s, l) => s + l.base, 0);

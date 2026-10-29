@@ -7,7 +7,12 @@ import path from 'node:path';
 import { ROOT, config } from './config.js';
 void ROOT;
 import { db, save, listAssets, putAsset, deleteAsset } from './store.js';
-import { ALL_LINES, AUDIO_EVENTS, SPEAKERS } from './episode1/dialogue.js';
+import { SPEAKERS } from './episode1/dialogue.js';
+import { allAudioEvents } from './episodes/index.js';
+
+// 所有劇集的對白（配音資產表、自動補齊、重新合成）
+const AUDIO_EVENTS = allAudioEvents();
+const ALL_LINES = AUDIO_EVENTS.flatMap((e) => e.lines.map((l) => ({ ...l, episode: e.episode || 'E1' })));
 import { HttpError } from './auth.js';
 import { clock } from './clock.js';
 import { localTtsStatus, synthesizeLine, VOICE_PROFILES } from './tts/local-tts.js';

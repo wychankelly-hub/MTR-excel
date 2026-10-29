@@ -3,19 +3,17 @@
 // Student：只看到自己隊伍；任務內容只在該關開始後才提供；標準答案只在該關結束後的回顧顯示。
 // Teacher：全部。
 import { db } from './store.js';
+import { episodeOf } from './episodes/index.js';
 import { clock } from './clock.js';
-import { LEVELS, LEVEL_BY_NUM, publicLevel, ROLE_LABELS, SKILLS, TASKS } from './episode1/blueprint.js';
-import { STORY_CLUES, AUDIO_EVENTS, AUDIO_EVENT_BY_ID } from './episode1/dialogue.js';
-import { CONCEPTS, REVIEW_CARDS, ERRORS } from './episode1/feedback.js';
 import { rankTeams, computeTeamScore, breakdownLines, RULES } from './scoring.js';
 import { levelTiming, publicRankRow, untaughtFor, audioAllowed, audioOutput, teamTaskState, isBuiltin, openReopens, practiceItemsFor } from './competition.js';
 import { submissionSummary } from './submission.js';
 import { googleCredentialStatus } from './adapters/google-adapter.js';
 import { features } from './config.js';
 import { expandRange } from './engine/refs.js';
-import { episodeOf } from './episodes/index.js';
 
 function levelPublic(comp, lv) {
+  const ep = episodeOf(comp);
   const l = comp.levels[lv.level];
   const t = levelTiming(comp, lv.level);
   const fc = l.firstClear ? comp.teams.find((x) => x.id === l.firstClear.teamId) : null;
@@ -27,12 +25,13 @@ function levelPublic(comp, lv) {
     remainingMs: l.phase === 'active' ? t.remainingMs : l.phase === 'pending' ? (comp.settings.levelSeconds[lv.level] * 1000) : 0,
     running: l.phase === 'active' && !comp.paused,
     firstClear: fc ? { name: fc.name, color: fc.color } : null,
-    clue: ['ended', 'skipped'].includes(l.phase) && l.startedAt ? STORY_CLUES[lv.level] : null,
+    clue: ['ended', 'skipped'].includes(l.phase) && l.startedAt ? ep.storyClues[lv.level] : null,
     successEffect: ['ended'].includes(l.phase) ? lv.successEffect : null,
   };
 }
 
 export function publicView(comp) {
+  const ep = episodeOf(comp);
   const lb = comp.leaderboard;
   let leaderboard = null;
   if (!lb.hidden) leaderboard = lb.frozen ? lb.snapshot : rankTeams(comp).map(publicRankRow(comp));
@@ -49,11 +48,15 @@ export function publicView(comp) {
     serverNow: clock.now(),
     currentLevel: comp.currentLevel,
     episodeStarted: !!comp.episodeStartedAt,
-    levels: LEVELS.map((lv) => levelPublic(comp, lv)),
+    episode: ep.id,
+    episodeNumber: ep.number,
+    episodeTitle: ep.title,
+    seriesTitle: ep.seriesTitle,
+    levels: ep.levels.map((lv) => levelPublic(comp, lv)),
     teams: comp.teams.map((t) => ({ id: t.id, name: t.name, code: t.code, color: t.color, memberCount: t.memberIds.length })),
     leaderboard,
     leaderboardState: { hidden: lb.hidden, frozen: lb.frozen },
-    reveal: comp.levels[5].phase === 'ended' ? { word: 'LUNCH', teaser: '第二集預告：疑犯火箭仔' } : null,
+    reveal: comp.levels[ep.lastLevel].phase === 'ended' ? ep.reveal : null,
     audioSeq: comp.audio.seq,
     audio: { designated: audioOutput(comp), bgm: !!comp.audio.bgm },
   };
@@ -70,22 +73,16 @@ function personOf(id) {
   return { id, name: nameOf(id), email: u?.email || null, provider: u?.provider };
 }
 
-function reviewForLevel(lv) {
-  const codes = Object.keys(REVIEW_CARDS).filter((c) => reviewCodeLevel(c) === lv.level);
+function reviewForLevel(ep, lv) {
+  const codes = Object.keys(ep.reviewCards).filter((c) => ep.codeLevel[c] === lv.level);
   return {
     references: Object.fromEntries(lv.tasks.map((t) => [t.id, Object.entries(lv.referenceFormulas).filter(([a]) => t.cells.flatMap(expandRange).includes(a)).slice(0, 2).map(([a, f]) => `${a}: ${f}`)])),
-    cards: codes.map((c) => ({ code: c, ...REVIEW_CARDS[c] })),
+    cards: codes.map((c) => ({ code: c, ...ep.reviewCards[c] })),
   };
 }
 
-const CODE_LEVEL = {
-  ABS_REF_MISSING: 1, ABS_REF_PARTIAL: 1, FORMULA_REQUIRED: 1, MAX_WRONG_RANGE: 2, FLOW_ONE_COLUMN: 2,
-  AND_OR_SWAPPED: 3, BOUNDARY_GT: 3, COUNTIF_REQUIRED: 4, CRITERIA_SYNTAX: 4, CRITERIA_GT: 4, CRITERIA_HARDCODED: 4,
-  HARDCODED_WORD: 5, MID_POSITION: 5, AMP_REQUIRED: 5,
-};
-const reviewCodeLevel = (c) => CODE_LEVEL[c];
-
 export function studentView(comp, user) {
+  const ep = episodeOf(comp);
   const pub = publicView(comp);
   const team = comp.teams.find((t) => t.memberIds.includes(user.id));
   if (!team) return { ...pub, me: { id: user.id, name: user.name }, team: null, waiting: (comp.waiting || []).includes(user.id) };
@@ -93,10 +90,10 @@ export function studentView(comp, user) {
   const subs = comp.submissions.filter((s) => s.teamId === team.id);
   const cancelled = comp.cancelledTasks.map((c) => c.taskId);
   const levels = [];
-  for (const lv of LEVELS) {
+  for (const lv of ep.levels) {
     const l = comp.levels[lv.level];
     if (l.phase === 'pending' || (l.phase === 'skipped' && !l.startedAt)) continue;
-    const pl = publicLevel(lv, { bonusEnabled: comp.settings.bonusEnabled });
+    const pl = ep.publicLevel(lv, { bonusEnabled: comp.settings.bonusEnabled });
     const ls = score.levels[lv.level];
     pl.phase = l.phase;
     pl.tasks = pl.tasks.map((t) => {
@@ -118,14 +115,14 @@ export function studentView(comp, user) {
     pl.hints = comp.hintUses.filter((h) => h.teamId === team.id && h.level === lv.level).map((h) => ({ tier: h.tier, text: lv.hints[h.tier - 1] }));
     pl.score = { ...ls, lines: breakdownLines(ls) };
     pl.teamCompleted = ls.completed;
-    pl.successEffect = ls.completed ? (lv.level === 5 && l.phase !== 'ended' ? '你們已破解廣播密碼！請保密，等全班完成後一齊揭曉。' : lv.successEffect) : null;
+    pl.successEffect = ls.completed ? (lv.level === ep.lastLevel && l.phase !== 'ended' && ep.secretNotice ? ep.secretNotice : lv.successEffect) : null;
     // 本隊正在重做（練習）此關的題目時，暫時不顯示可得分公式
     const practicing = openReopens(comp, team.id).some((r) => r.level === lv.level);
-    pl.review = l.phase === 'ended' && !practicing ? reviewForLevel(lv) : null;
-    const dl = (id) => (AUDIO_EVENT_BY_ID[id]?.lines || []).map((x) => ({ speaker: x.speaker_name, text: x.subtitle_zh_Hant }));
-    pl.dialogue = dl(`L${lv.level}_OPEN`);
-    pl.closing = l.phase === 'ended' && lv.level < 5 ? dl(`L${lv.level}_CLOSE`) : [];
-    pl.roles = team.roles[lv.level] ? Object.fromEntries(Object.entries(team.roles[lv.level]).filter(([, v]) => v).map(([k, v]) => [k, { label: ROLE_LABELS[k], name: nameOf(v), isMe: v === user.id }])) : null;
+    pl.review = l.phase === 'ended' && !practicing ? reviewForLevel(ep, lv) : null;
+    const dl = (id) => (ep.audioEventById[id]?.lines || []).map((x) => ({ speaker: x.speaker_name, text: x.subtitle_zh_Hant }));
+    pl.dialogue = dl(ep.audio.open(lv.level));
+    pl.closing = l.phase === 'ended' && lv.level < ep.lastLevel ? dl(ep.audio.close(lv.level)) : [];
+    pl.roles = team.roles[lv.level] ? Object.fromEntries(Object.entries(team.roles[lv.level]).filter(([, v]) => v).map(([k, v]) => [k, { label: ep.roleLabels[k], name: nameOf(v), isMe: v === user.id }])) : null;
     levels.push(pl);
   }
   return {
@@ -146,6 +143,8 @@ export function studentView(comp, user) {
 }
 
 export function diagnostics(comp) {
+  const ep = episodeOf(comp);
+  const { concepts: CONCEPTS, reviewCards: REVIEW_CARDS, errors: ERRORS } = ep;
   const graded = comp.submissions.filter((s) => ['VERIFIED', 'REJECTED'].includes(s.status) && !s.practice);
   const byCode = {};
   const byConcept = {};
@@ -186,6 +185,7 @@ export function diagnostics(comp) {
 }
 
 export function teacherView(comp) {
+  const ep = episodeOf(comp);
   const scores = rankTeams(comp);
   return {
     ...publicView(comp),
@@ -193,9 +193,9 @@ export function teacherView(comp) {
     joinCode: comp.joinCode,
     projectorKey: comp.projectorKey,
     settings: comp.settings,
-    skills: SKILLS,
-    untaught: Object.fromEntries(LEVELS.map((l) => [l.level, untaughtFor(comp, l.level)])),
-    levelsTeacher: LEVELS.map((lv) => ({
+    skills: ep.skills,
+    untaught: Object.fromEntries(ep.levels.map((l) => [l.level, untaughtFor(comp, l.level)])),
+    levelsTeacher: ep.levels.map((lv) => ({
       level: lv.level, sheet: lv.sheet, title: lv.title, skills: lv.skills, editable: lv.editable,
       ...comp.levels[lv.level],
       timing: levelTiming(comp, lv.level),
@@ -208,12 +208,17 @@ export function teacherView(comp) {
       workbook: t.workbook,
     })),
     episode: comp.episode || 'E1',
-    episodeTitle: episodeOf(comp).title,
+    episodeTitle: ep.title,
     waiting: (comp.waiting || []).map(personOf),
-    taskStates: Object.fromEntries(comp.teams.map((t) => [t.id, Object.fromEntries(TASKS.map((task) => { const st = teamTaskState(comp, t, task); return [task.id, st.reopen ? 'reopened' : st.state]; }))])),
+    taskStates: Object.fromEntries(comp.teams.map((t) => [t.id, Object.fromEntries(ep.tasks.map((task) => { const st = teamTaskState(comp, t, task); return [task.id, st.reopen ? 'reopened' : st.state]; }))])),
     taskOverrides: comp.taskOverrides || {},
     reopens: comp.reopens || [],
     generation: comp.generation ? { ...comp.generation } : null,
+    // 預檢表的數據摘要欄（每集不同）
+    flagTable: comp.generation ? {
+      labels: ep.flagColumns.map(([, label]) => label),
+      rows: Object.fromEntries(Object.entries(comp.generation.teams || {}).map(([id, gt]) => [id, ep.flagColumns.map(([k]) => (typeof k === 'function' ? k(gt.flags || {}) : gt.flags?.[k]) ?? '—')])),
+    } : null,
     approval: comp.approval,
     scores: scores.map((s) => ({ ...s, levelsLines: Object.fromEntries(Object.values(s.levels).map((l) => [l.level, breakdownLines(l)])) })),
     rules: RULES,
@@ -225,23 +230,25 @@ export function teacherView(comp) {
     hintUses: comp.hintUses,
     adjustments: comp.adjustments,
     cancelledTasks: comp.cancelledTasks,
-    tasks: TASKS.map((t) => ({ id: t.id, level: t.level, points: t.points, bonus: !!t.bonus })),
+    tasks: ep.tasks.map((t) => ({ id: t.id, level: t.level, points: t.points, bonus: !!t.bonus })),
     audit: comp.audit.slice(-300),
     health: { ...comp.health, google: googleCredentialStatus(), features: features() },
     audio: {
       designated: audioOutput(comp), bgm: !!comp.audio.bgm, projectors: comp.audio.projectors || {},
       log: comp.audio.log.slice(-50),
       projector: comp.audio.projector,
-      events: AUDIO_EVENTS.filter((e) => e.public).map((e) => ({ id: e.id, trigger: e.trigger, level: e.level, spoiler: e.spoiler, lineCount: e.lines.length, allowed: audioAllowed(comp, e) })),
+      events: ep.audioEvents.filter((e) => e.public).map((e) => ({ id: e.id, trigger: e.trigger, level: e.level, spoiler: e.spoiler, lineCount: e.lines.length, allowed: audioAllowed(comp, e) })),
     },
     diagnostics: diagnostics(comp),
   };
 }
 
 export function resultsCsv(comp) {
+  const ep = episodeOf(comp);
+  const LEVELS = ep.levels;
   const scores = rankTeams(comp);
   const diag = diagnostics(comp);
-  const taskIds = TASKS.filter((t) => !t.bonus || comp.settings.bonusEnabled).map((t) => t.id);
+  const taskIds = ep.tasks.filter((t) => !t.bonus || comp.settings.bonusEnabled).map((t) => t.id);
   const header = ['Rank', 'Team', 'Code', 'Total', 'BaseTotal', ...LEVELS.map((l) => `L${l.level}_Score`), ...LEVELS.map((l) => `L${l.level}_Points`), 'Combo', 'ManualAdjust', 'HintsUsed', 'Submissions', 'RejectedSubmissions', 'SyncFailures', 'CompletedLevels', ...taskIds.map((t) => `${t}_Best`), 'TopErrors'];
   const rows = [header];
   for (const s of scores) {
@@ -252,7 +259,7 @@ export function resultsCsv(comp) {
       ...LEVELS.map((l) => s.levels[l.level].total),
       ...LEVELS.map((l) => `${s.levels[l.level].earnedPts}/${s.levels[l.level].maxPts}`),
       s.combo, s.manual, s.hintsUsed, d.submissions, d.rejected, d.syncFailures, s.completedLevels,
-      ...taskIds.map((id) => s.levels[LEVEL_BY_NUM[Number(id[1])].level].best[id] ?? 0),
+      ...taskIds.map((id) => s.levels[ep.taskById[id].level].best[id] ?? 0),
       d.topErrors.map(([c, n]) => `${c}×${n}`).join(' '),
     ]);
   }

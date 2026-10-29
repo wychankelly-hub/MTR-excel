@@ -9,6 +9,9 @@ import { AUDIO_EVENTS } from '../server/episode1/dialogue.js';
 import { generateCompetitionDatasets } from '../server/episode1/generator.js';
 import { gradeTask } from '../server/episode1/validators.js';
 import { wrongCases } from '../server/episode1/fixtures.js';
+import * as bp2 from '../server/episode2/blueprint.js';
+import * as fb2 from '../server/episode2/feedback.js';
+import * as dlg2 from '../server/episode2/dialogue.js';
 
 // 常見簡體字（若出現代表誤用簡體中文）
 const SIMPLIFIED = '这们题数计错误时关复参应选择输结论单绝对范围条隐测试华网络页显总额费开实员组检报过还发现为与从车门站长' + '时间问场乐书龙鸡响边听说读写类动态区级点线递连转进运迟';
@@ -21,6 +24,13 @@ const studentTexts = [
   ...Object.values(ERRORS).map((e) => e.text),
   ...Object.values(REVIEW_CARDS).flatMap((c) => [c.why, c.keyword, c.clue, c.apply]),
   ...AUDIO_EVENTS.flatMap((e) => e.lines.map((l) => l.subtitle_zh_Hant)),
+  // 第二集
+  ...bp2.LEVELS.flatMap((l) => [l.title, l.storyGoal, l.successEffect, l.rule || '', ...l.hints]),
+  ...bp2.TASKS.flatMap((t) => [t.instruction, ...t.markingPoints.map((m) => m.label)]),
+  ...Object.values(fb2.ERRORS).map((e) => e.text),
+  ...Object.values(fb2.REVIEW_CARDS).flatMap((c) => [c.why, c.keyword, c.clue, c.apply]),
+  ...dlg2.AUDIO_EVENTS.flatMap((e) => e.lines.map((l) => l.subtitle_zh_Hant)),
+  ...Object.values(dlg2.STORY_CLUES),
 ];
 
 test('42. 學生須閱讀的題目、Hints、Feedback 均為繁體中文', () => {
@@ -32,7 +42,7 @@ test('42. 學生須閱讀的題目、Hints、Feedback 均為繁體中文', () =>
   for (const l of LEVELS) for (const h of l.hints) assert.match(h, /[一-鿿]/);
   // 前端可見文字
   const root = path.resolve(import.meta.dirname, '..', 'public');
-  for (const f of ['index.html', 'student.html', 'projector.html', 'teacher.html', 'js/student.js', 'js/projector.js', 'js/sheet-grid.js', 'js/common.js', 'js/teacher.js', 'js/characters.js', 'js/rail.js', 'js/stage.js', 'js/audio.js']) {
+  for (const f of ['index.html', 'student.html', 'projector.html', 'teacher.html', 'js/student.js', 'js/projector.js', 'js/sheet-grid.js', 'js/common.js', 'js/teacher.js', 'js/characters.js', 'js/rail.js', 'js/stage.js', 'js/audio.js', 'js/sheet-editor.js']) {
     const src = fs.readFileSync(path.join(root, f), 'utf8');
     const zh = (src.match(/[一-鿿]+/g) || []).join('');
     assert.deepEqual(simplifiedIn(zh), [], `${f} 含疑似簡體字`);
@@ -58,7 +68,7 @@ test('43. 所有學生答案只需英文、數字、符號及公式', () => {
 
 test('44. 回合未結束時看不到標準答案（學生視圖測試見 d-competition）', () => {
   const src = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'server/views.js'), 'utf8');
-  assert.match(src, /pl\.review = l\.phase === 'ended' && !practicing \? reviewForLevel\(lv\) : null/);
+  assert.match(src, /pl\.review = l\.phase === 'ended' && !practicing \? reviewForLevel\(ep, lv\) : null/);
 });
 
 test('45. 成績報告能指出五種概念錯誤：$、SUM/MAX 範圍、AND/OR、COUNTIF/SUMIF、&／文字函數', () => {

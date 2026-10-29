@@ -7,8 +7,7 @@
 import crypto from 'node:crypto';
 import { clock } from './clock.js';
 import { HttpError } from './auth.js';
-import { TASK_BY_ID, LEVEL_BY_NUM, requiredTasks } from './episode1/blueprint.js';
-import { gradeTask, checkIntegrity, evaluateStudentLevel } from './episode1/validators.js';
+import { episodeOf } from './episodes/index.js';
 import { expandRange } from './engine/refs.js';
 import { isError } from './engine/values.js';
 import { checksum } from './episode1/rng.js';
@@ -50,7 +49,8 @@ export function submissionSummary(s) {
 export async function submitTask(comp, user, { taskId, idempotencyKey }) {
   const team = teamOfUser(comp, user.id);
   if (!team) throw new HttpError(403, '你未加入任何隊伍。', 'NO_TEAM');
-  const task = TASK_BY_ID[taskId];
+  const ep = episodeOf(comp);
+  const task = ep.taskById[taskId];
   if (!task) throw new HttpError(400, '沒有此題目。');
   const key = String(idempotencyKey || '').slice(0, 80);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) throw new HttpError(400, '缺少有效的提交識別碼（Idempotency Key）。');
@@ -128,7 +128,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     }
 
     const dataset = getDataset(comp, team);
-    const lv = LEVEL_BY_NUM[task.level];
+    const lv = ep.levelByNum[task.level];
     const taskCells = task.cells.flatMap(expandRange);
     const editableCells = lv.editable.flatMap(expandRange);
     const inputs = Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.input ?? null]));
@@ -143,7 +143,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
 
     // 2. 完整性
     sub.status = 'VALIDATING';
-    const changedCells = snap.sheetMissing ? ['（整張工作表）'] : checkIntegrity(task.level, snap.cells, dataset);
+    const changedCells = snap.sheetMissing ? ['（整張工作表）'] : ep.checkIntegrity(task.level, snap.cells, dataset);
     if (changedCells.length) {
       sub.status = 'INTEGRITY_ERROR';
       sub.noPenalty = true;
@@ -169,7 +169,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     }
 
     // 4. 批改（伺服器端 AST + 重算 + 隱藏測試）
-    const result = gradeTask(taskId, inputs, dataset);
+    const result = ep.gradeTask(taskId, inputs, dataset);
     Object.assign(sub, {
       status: result.status,
       earned: result.earned,
@@ -183,7 +183,7 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
 
     // 5. Google Sheets 計算結果與伺服器引擎交叉核對（不一致 → 老師覆核，不扣分）
     if (comp.adapter === 'google') {
-      const engineVals = evaluateStudentLevel(task.level, inputs, dataset);
+      const engineVals = ep.evaluateStudentLevel(task.level, inputs, dataset);
       const mismatch = taskCells.filter((a) => !valuesMatch(snap.cells[a]?.value ?? null, engineVals[a]));
       if (mismatch.length) {
         sub.engineMismatch = mismatch.slice(0, 20);
@@ -202,10 +202,10 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
     // 6. 過關事件
     const score = computeTeamScore(comp, team.id);
     const ls = score.levels[task.level];
-    const reqIds = requiredTasks(task.level, comp.cancelledTasks.map((c) => c.taskId)).map((t) => t.id);
+    const reqIds = ep.requiredTasks(task.level, comp.cancelledTasks.map((c) => c.taskId)).map((t) => t.id);
     if (!sub.makeup && ls.completed && reqIds.includes(taskId) && !comp.levels[task.level].firstClear) {
       comp.levels[task.level].firstClear = { teamId: team.id, at: sub.at };
-      try { triggerAudio(comp, `L${task.level}_FIRST_CLEAR`, { auto: true }); } catch { /* 不影響提交 */ }
+      try { triggerAudio(comp, ep.audio.firstClear(task.level), { auto: true }); } catch { /* 不影響提交 */ }
     }
     // 投影端的公開音效／動畫（只有隊名，沒有答案）
     if (sub.status === 'VERIFIED' && !sub.makeup) {
@@ -234,7 +234,8 @@ export async function submitPractice(comp, user, { reopenId, idempotencyKey }) {
   const reopen = (comp.reopens || []).find((r) => r.id === reopenId);
   if (!reopen || reopen.mode !== 'practice' || !reopen.teamIds.includes(team.id)) throw new HttpError(403, '沒有此練習，或練習不屬於你的隊伍。', 'NO_PRACTICE');
   if (reopen.closedAt) throw new HttpError(409, '老師已結束這次練習。', 'PRACTICE_CLOSED');
-  const task = TASK_BY_ID[reopen.taskId];
+  const ep = episodeOf(comp);
+  const task = ep.taskById[reopen.taskId];
   const key = String(idempotencyKey || '').slice(0, 80);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) throw new HttpError(400, '缺少有效的提交識別碼（Idempotency Key）。');
   const idemKey = `${team.id}:P:${key}`;
@@ -258,7 +259,7 @@ export async function submitPractice(comp, user, { reopenId, idempotencyKey }) {
     comp.submissions.push(sub);
     const snap = readLevelSnapshot(comp, team, task.level, reopen.id);
     const dataset = getDataset(comp, team);
-    const lv = LEVEL_BY_NUM[task.level];
+    const lv = ep.levelByNum[task.level];
     const taskCells = task.cells.flatMap(expandRange);
     const editableCells = lv.editable.flatMap(expandRange);
     const inputs = Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.input ?? null]));
@@ -270,7 +271,7 @@ export async function submitPractice(comp, user, { reopenId, idempotencyKey }) {
       changed(comp, 'submission');
       return { ...submissionSummary(sub), practice: true };
     }
-    const result = gradeTask(task.id, inputs, dataset);
+    const result = ep.gradeTask(task.id, inputs, dataset);
     Object.assign(sub, { status: result.status, earned: result.earned, max: result.max, markingPoints: result.markingPoints, errors: result.errors, validatorVersion: result.validatorVersion, needsReview: result.needsReview });
     sub.message = result.status === 'VERIFIED' ? '練習：全部評分點正確（練習不計分）。' : '練習：未全對，可以修改後再提交（練習不計分、不扣分）。';
     studentSfx(comp, team.id, result.status === 'VERIFIED' ? 'correct' : 'wrong', sub.id);

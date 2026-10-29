@@ -208,5 +208,215 @@
     "text": "仲有一分鐘！大家檢查清楚先好提交！",
     "file": "TIMER_WARNING_01.mp3",
     "generatedAt": "2026-10-28T07:13:12.543Z"
+  },
+  "E2_INTRO_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "大鑊！我個最佳站長獎座唔見咗！",
+    "file": "E2_INTRO_01.mp3",
+    "generatedAt": "2026-10-29T07:21:51.473Z"
+  },
+  "E2_INTRO_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "門禁紀錄話，午飯時間有人用火箭仔張員工證開過辦公室門！",
+    "file": "E2_INTRO_02.mp3",
+    "generatedAt": "2026-10-29T07:21:52.751Z"
+  },
+  "E2_INTRO_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "唔係我呀！我發誓我冇掂過！",
+    "file": "E2_INTRO_03.mp3",
+    "generatedAt": "2026-10-29T07:21:53.284Z"
+  },
+  "E2_INTRO_04": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "唔好急住捉人。我哋用數據，一步一步查清楚。",
+    "file": "E2_INTRO_04.mp3",
+    "generatedAt": "2026-10-29T07:21:54.180Z"
+  },
+  "E2_L1_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "門禁紀錄全部黐埋一齊，地點、時間、員工證號碼都撈埋一嚿。",
+    "file": "E2_L1_OPEN_01.mp3",
+    "generatedAt": "2026-10-29T07:21:55.364Z"
+  },
+  "E2_L1_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "用 FIND 搵出 @ 同井字號嘅位置，就可以逐段拆開。",
+    "file": "E2_L1_OPEN_02.mp3",
+    "generatedAt": "2026-10-29T07:22:26.248Z"
+  },
+  "E2_L1_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "有隊伍拆開咗門禁紀錄！做得好！",
+    "file": "E2_L1_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-10-29T07:21:56.924Z"
+  },
+  "E2_L1_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "睇吓！十二點三十一分，火箭仔張證開過辦公室門！",
+    "file": "E2_L1_CLOSE_01.mp3",
+    "generatedAt": "2026-10-29T07:21:57.975Z"
+  },
+  "E2_L1_CLOSE_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "張證係我嘅，但係嗰陣我唔喺度呀！",
+    "file": "E2_L1_CLOSE_02.mp3",
+    "generatedAt": "2026-10-29T07:21:58.718Z"
+  },
+  "E2_L2_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "喂喂叔：大聲、低沉",
+    "text": "喂喂喂！咁多號碼，邊個打邊個呀？",
+    "file": "E2_L2_OPEN_01.mp3",
+    "generatedAt": "2026-10-29T07:21:59.294Z"
+  },
+  "E2_L2_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "用員工名冊對一對，就知道每張證屬於邊個，邊個係訪客。",
+    "file": "E2_L2_OPEN_02.mp3",
+    "generatedAt": "2026-10-29T07:22:00.331Z"
+  },
+  "E2_L2_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "查表嘅時候，名冊範圍一定要固定，唔係複製落去就會漏人。",
+    "file": "E2_L2_CLOSE_01.mp3",
+    "generatedAt": "2026-10-29T07:22:01.331Z"
+  },
+  "E2_L3_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "會唔會有人偷獎座拎去賣？快啲點吓個現金箱！",
+    "file": "E2_L3_OPEN_01.mp3",
+    "generatedAt": "2026-10-29T07:22:02.268Z"
+  },
+  "E2_L3_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "港幣最細係一毫，記得四捨五入至一個小數位。",
+    "file": "E2_L3_OPEN_02.mp3",
+    "generatedAt": "2026-10-29T07:22:03.177Z"
+  },
+  "E2_L3_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "現金一毫子都冇少，獎座唔係俾人拎去換錢。",
+    "file": "E2_L3_CLOSE_01.mp3",
+    "generatedAt": "2026-10-29T07:22:04.029Z"
+  },
+  "E2_L4_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "十二點三十一分我喺月台幫緊乘客，好遠㗎！",
+    "file": "E2_L4_OPEN_01.mp3",
+    "generatedAt": "2026-10-29T07:22:27.826Z"
+  },
+  "E2_L4_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "計吓每個人同辦公室嘅距離，再排一排名次。",
+    "file": "E2_L4_OPEN_02.mp3",
+    "generatedAt": "2026-10-29T07:22:05.730Z"
+  },
+  "E2_L4_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "數據顯示，嗰陣火箭仔係離辦公室最遠嘅人。",
+    "file": "E2_L4_CLOSE_01.mp3",
+    "generatedAt": "2026-10-29T07:22:06.592Z"
+  },
+  "E2_L4_CLOSE_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "我都話唔係我啦！",
+    "file": "E2_L4_CLOSE_02.mp3",
+    "generatedAt": "2026-10-29T07:22:06.903Z"
+  },
+  "E2_L4_CLOSE_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "咁……用佢張證開門嘅，究竟係邊個？",
+    "file": "E2_L4_CLOSE_03.mp3",
+    "generatedAt": "2026-10-29T07:22:07.562Z"
+  },
+  "E2_L5_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "我要搜晒全部儲物櫃！",
+    "file": "E2_L5_OPEN_01.mp3",
+    "generatedAt": "2026-10-29T07:22:08.056Z"
+  },
+  "E2_L5_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "隨機抽查先公平，唔好淨係搜火箭仔個櫃。",
+    "file": "E2_L5_OPEN_02.mp3",
+    "generatedAt": "2026-10-29T07:22:08.892Z"
+  },
+  "E2_L5_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "有隊伍已經排好抽查次序，等全班完成先一齊揭曉！",
+    "file": "E2_L5_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-10-29T07:22:09.879Z"
+  },
+  "E2_FINAL_REVEAL_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "喂喂叔：大聲、低沉",
+    "text": "喂喂！失物認領處搵到一個好閃嘅獎座呀！",
+    "file": "E2_FINAL_REVEAL_01.mp3",
+    "generatedAt": "2026-10-29T07:22:10.625Z"
+  },
+  "E2_FINAL_REVEAL_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "對唔住呀……我嗰日唔記得帶證，借咗火箭仔張證。",
+    "file": "E2_FINAL_REVEAL_02.mp3",
+    "generatedAt": "2026-10-29T07:22:11.447Z"
+  },
+  "E2_FINAL_REVEAL_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "我見個獎座好多塵，就拎咗去失物認領處抹乾淨，之後唔記得拎返。",
+    "file": "E2_FINAL_REVEAL_03.mp3",
+    "generatedAt": "2026-10-29T07:22:12.606Z"
+  },
+  "E2_FINAL_REVEAL_04": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "真相大白：火箭仔係清白嘅。",
+    "file": "E2_FINAL_REVEAL_04.mp3",
+    "generatedAt": "2026-10-29T07:22:13.237Z"
+  },
+  "E2_FINAL_REVEAL_05": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "火箭仔，對唔住！下次一定先查清楚數據，唔好亂咁冤枉人。",
+    "file": "E2_FINAL_REVEAL_05.mp3",
+    "generatedAt": "2026-10-29T07:22:14.241Z"
+  },
+  "E2_FINAL_REVEAL_06": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "哈！我就話唔係我啦！",
+    "file": "E2_FINAL_REVEAL_06.mp3",
+    "generatedAt": "2026-10-29T07:22:14.633Z"
+  },
+  "E2_TIMER_WARNING_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "仲有一分鐘！檢查清楚啲線索先好提交！",
+    "file": "E2_TIMER_WARNING_01.mp3",
+    "generatedAt": "2026-10-29T07:22:15.489Z"
   }
 }

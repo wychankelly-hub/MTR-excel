@@ -4,18 +4,13 @@ import { db, save } from './store.js';
 import { clock } from './clock.js';
 import { bus } from './bus.js';
 import { HttpError } from './auth.js';
-import {
-  LEVELS, LEVEL_BY_NUM, TASK_BY_ID, TEAM_PRESETS, SKILLS, GENERATOR_VERSION, TEMPLATE_VERSION, EPISODE_ID,
-} from './episode1/blueprint.js';
-import { generateCompetitionDatasets } from './episode1/generator.js';
+import { TEAM_PRESETS } from './episode1/blueprint.js';
 import { checksum } from './episode1/rng.js';
-import { preflightTeam } from './episode1/preflight.js';
-import { AUDIO_EVENT_BY_ID } from './episode1/dialogue.js';
 import { resolvedEvent } from './audio-assets.js';
 import { DemoAdapter } from './adapters/demo-adapter.js';
 import { GoogleAdapter } from './adapters/google-adapter.js';
 import { rankTeams, computeTeamScore } from './scoring.js';
-import { episodeOf } from './episodes/index.js';
+import { episodeOf, episodeById } from './episodes/index.js';
 import { configureSheets, MAIN, forgetComp as forgetSheets } from './sheets.js';
 import { expandRange } from './engine/refs.js';
 
@@ -33,7 +28,7 @@ export function getDatasets(comp) {
   let entry = datasetCache.get(comp.id);
   if (!entry || entry.seed !== comp.generation.seed) {
     const keys = comp.teams.map((t) => t.key);
-    const list = generateCompetitionDatasets(comp.generation.seed, keys);
+    const list = episodeOf(comp).generateCompetitionDatasets(comp.generation.seed, keys);
     const byTeamId = {};
     comp.teams.forEach((t, i) => {
       const ds = list[i];
@@ -199,13 +194,15 @@ export function createCompetition(teacher, opts = {}) {
   // 新比賽預設使用內置工作表（'builtin'）；Google Sheets 只保留作舊模式
   const adapter = opts.adapter === 'google' ? 'google' : opts.adapter === 'demo' ? 'demo' : 'builtin';
   if (adapter === 'google' && teacher.provider === 'demo') throw new HttpError(400, 'Demo 老師帳戶只可以建立 Demo 比賽；正式 Google Sheets 比賽需要以 Google 登入。');
+  const ep = episodeById(opts.episode || 'E1');
+  if (!ep) throw new HttpError(400, '沒有此劇集。');
   const id = `c_${randCode(10, 'abcdefghijkmnpqrstuvwxyz23456789')}`;
   let joinCode = randCode(6);
   while (Object.values(db.state.competitions).some((c) => c.joinCode === joinCode)) joinCode = randCode(6);
   const comp = {
     id,
-    episode: EPISODE_ID,
-    title: String(opts.title || '定過抬油：站長爭奪戰 E1').slice(0, 80),
+    episode: ep.id,
+    title: String(opts.title || ep.defaultCompTitle).slice(0, 80),
     classCode: String(opts.classCode || '').replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20),
     adapter,
     demo: false,
@@ -215,13 +212,13 @@ export function createCompetition(teacher, opts = {}) {
     createdAt: clock.now(),
     status: STATUS.DRAFT,
     prevStatus: null,
-    rulesVersion: 'E1-RULES-1.0.0',
-    templateVersion: TEMPLATE_VERSION,
-    generatorVersion: GENERATOR_VERSION,
+    rulesVersion: ep.rulesVersion,
+    templateVersion: ep.templateVersion,
+    generatorVersion: ep.generatorVersion,
     settings: {
       teamCount,
-      levelSeconds: Object.fromEntries(LEVELS.map((l) => [l.level, Number(opts.levelSeconds?.[l.level] ?? l.defaultSeconds)])),
-      taughtSkills: Array.isArray(opts.taughtSkills) ? opts.taughtSkills.filter((s) => SKILLS.some((k) => k.id === s)) : SKILLS.map((s) => s.id),
+      levelSeconds: Object.fromEntries(ep.levels.map((l) => [l.level, Number(opts.levelSeconds?.[l.level] ?? l.defaultSeconds)])),
+      taughtSkills: Array.isArray(opts.taughtSkills) ? opts.taughtSkills.filter((s) => ep.skills.some((k) => k.id === s)) : ep.skills.map((s) => s.id),
       bonusEnabled: !!opts.bonusEnabled,
       maxTeamSize: 5,
       captainOnlySubmit: !!opts.captainOnlySubmit,
@@ -240,7 +237,7 @@ export function createCompetition(teacher, opts = {}) {
     approval: null,
     episodeStartedAt: null,
     currentLevel: 0,
-    levels: Object.fromEntries(LEVELS.map((l) => [l.level, { phase: 'pending' }])),
+    levels: Object.fromEntries(ep.levels.map((l) => [l.level, { phase: 'pending' }])),
     paused: false,
     leaderboard: { hidden: false, frozen: false, frozenAt: null, snapshot: null },
     submissions: [],
@@ -256,7 +253,7 @@ export function createCompetition(teacher, opts = {}) {
     audit: [],
   };
   db.state.competitions[id] = comp;
-  audit(comp, teacher, 'CREATE', { teamCount, adapter });
+  audit(comp, teacher, 'CREATE', { teamCount, adapter, episode: ep.id });
   changed(comp, 'create');
   return comp;
 }
@@ -293,10 +290,10 @@ export function updateSettings(comp, teacher, patch) {
   if (patch.levelSeconds) {
     for (const [k, v] of Object.entries(patch.levelSeconds)) {
       const n = Number(v);
-      if (LEVEL_BY_NUM[k] && n >= 60 && n <= 3600 && comp.levels[k].phase === 'pending') s.levelSeconds[k] = n;
+      if (episodeOf(comp).levelByNum[k] && n >= 60 && n <= 3600 && comp.levels[k].phase === 'pending') s.levelSeconds[k] = n;
     }
   }
-  if (Array.isArray(patch.taughtSkills)) s.taughtSkills = patch.taughtSkills.filter((x) => SKILLS.some((k) => k.id === x));
+  if (Array.isArray(patch.taughtSkills)) s.taughtSkills = patch.taughtSkills.filter((x) => episodeOf(comp).skills.some((k) => k.id === x));
   if (patch.bonusEnabled !== undefined) {
     if (isRunning(comp) && comp.levels[1].phase !== 'pending') throw new HttpError(409, '比賽開始後不能更改 Bonus 設定（確保所有隊伍機會相同）。');
     s.bonusEnabled = !!patch.bonusEnabled;
@@ -323,7 +320,7 @@ export function updateSettings(comp, teacher, patch) {
 
 /** 未教授的技能 → 該關預設不開始 */
 export function untaughtFor(comp, level) {
-  const lv = LEVEL_BY_NUM[level];
+  const lv = episodeOf(comp).levelByNum[level];
   return lv.skills.filter((s) => !comp.settings.taughtSkills.includes(s));
 }
 
@@ -338,13 +335,13 @@ export function generate(comp, teacher, { newSeed = true } = {}) {
   // Preflight 未通過 → 自動以新 Seed 重抽（最多 5 次），並記錄被拒絕的 Seed
   for (let attempt = 0; attempt < 5; attempt++) {
     seed = attempt === 0 && !newSeed && comp.generation ? comp.generation.seed : `S-${randCode(12)}`;
-    list = generateCompetitionDatasets(seed, comp.teams.map((t) => t.key));
+    list = episodeOf(comp).generateCompetitionDatasets(seed, comp.teams.map((t) => t.key));
     teams = {};
     preflight = {};
     comp.teams.forEach((t, i) => {
       const ds = list[i];
       teams[t.id] = { teamSeed: ds.teamSeed, attempts: ds.attempts, rejectedAttempts: ds.rejected.length, checksums: ds.checksums, flags: ds.flags };
-      const p = preflightTeam(ds);
+      const p = episodeOf(comp).preflightTeam(ds);
       preflight[t.id] = { pass: p.pass, total: p.total, failed: p.failed };
     });
     pass = Object.values(preflight).every((p) => p.pass);
@@ -352,7 +349,7 @@ export function generate(comp, teacher, { newSeed = true } = {}) {
     rejectedSeeds.push({ seed, failed: Object.entries(preflight).filter(([, p]) => !p.pass).map(([k, p]) => ({ teamId: k, failed: p.failed })) });
   }
   datasetCache.set(comp.id, { seed, byTeamId: Object.fromEntries(comp.teams.map((t, i) => [t.id, list[i]])) });
-  comp.generation = { seed, generatorVersion: GENERATOR_VERSION, templateVersion: TEMPLATE_VERSION, at: clock.now(), ms: Date.now() - t0, teams, preflight, pass, rejectedSeeds };
+  comp.generation = { seed, generatorVersion: episodeOf(comp).generatorVersion, templateVersion: episodeOf(comp).templateVersion, at: clock.now(), ms: Date.now() - t0, teams, preflight, pass, rejectedSeeds };
   comp.status = STATUS.PREFLIGHT;
   audit(comp, teacher, 'GENERATE_DATASETS', { seed, pass });
   changed(comp, 'generate');
@@ -372,11 +369,11 @@ export function preflightDetail(comp, teacher, teamId) {
     checksums: ds.checksums,
     flags: ds.flags,
     preflight: comp.generation.preflight[team.id],
-    levels: LEVELS.map((lv) => ({
+    levels: episodeOf(comp).levels.map((lv) => ({
       level: lv.level,
       sheet: lv.sheet,
       title: lv.title,
-      params: summarizeParams(lv.level, ds.levels[lv.level]),
+      params: episodeOf(comp).summarizeParams(lv.level, ds.levels[lv.level]),
       tasks: lv.tasks.map((t) => ({
         id: t.id,
         bonus: !!t.bonus,
@@ -385,7 +382,7 @@ export function preflightDetail(comp, teacher, teamId) {
       })),
       data: ds.levels[lv.level].data,
       initial: ds.levels[lv.level].initial,
-      hiddenSummary: summarizeParams(lv.level, ds.hidden[lv.level]),
+      hiddenSummary: episodeOf(comp).summarizeParams(lv.level, ds.hidden[lv.level]),
     })),
   };
 }
@@ -430,11 +427,6 @@ export function teacherPreview(comp, teacher, teamId, taskId) {
   };
 }
 
-function summarizeParams(level, d) {
-  const p = { ...d.params };
-  if (level === 4) delete p.codes;
-  return p;
-}
 
 function cellInRange(a, range) {
   const [s, e] = range.split(':');
@@ -559,7 +551,7 @@ async function addMember(comp, team, user) {
   comp.waiting = (comp.waiting || []).filter((x) => x !== user.id);
   team.memberIds.push(user.id);
   if (!team.captainId) team.captainId = user.id;
-  assignRoles(team);
+  assignRoles(team, episodeOf(comp).levels);
   if (comp.adapter === 'google' && team.workbook?.status === 'READY' && user.email) {
     try {
       await adapters.google.share(team.workbook, user.email);
@@ -610,7 +602,7 @@ export async function removeStudent(comp, teacher, userId, reason) {
   if (from) {
     from.memberIds = from.memberIds.filter((x) => x !== userId);
     if (from.captainId === userId) from.captainId = from.memberIds[0] || null;
-    assignRoles(from);
+    assignRoles(from, episodeOf(comp).levels);
     const user = db.state.users[userId];
     if (comp.adapter === 'google' && from.workbook?.fileId && user?.email) {
       try { await adapters.google.unshare(from.workbook, user.email); } catch (e) { from.workbook.shareError = e.message; }
@@ -659,14 +651,14 @@ export async function transferStudent(comp, teacher, userId, toTeamId, reason) {
   if (from) {
     from.memberIds = from.memberIds.filter((x) => x !== userId);
     if (from.captainId === userId) from.captainId = from.memberIds[0] || null;
-    assignRoles(from);
+    assignRoles(from, episodeOf(comp).levels);
     if (comp.adapter === 'google' && from.workbook?.fileId && user?.email) {
       try { await adapters.google.unshare(from.workbook, user.email); } catch (e) { from.workbook.shareError = e.message; }
     }
   }
   to.memberIds.push(userId);
   if (!to.captainId) to.captainId = userId;
-  assignRoles(to);
+  assignRoles(to, episodeOf(comp).levels);
   if (comp.adapter === 'google' && to.workbook?.fileId && user?.email) {
     try { await adapters.google.share(to.workbook, user.email); } catch (e) { to.workbook.shareError = e.message; }
   }
@@ -675,11 +667,11 @@ export async function transferStudent(comp, teacher, userId, toTeamId, reason) {
 }
 
 /** 每關輪換角色：同一人不會連續兩關當 Driver（2 人或以上） */
-export function assignRoles(team) {
+export function assignRoles(team, levels = [1, 2, 3, 4, 5].map((level) => ({ level }))) {
   const m = team.memberIds;
   team.roles = {};
   if (!m.length) return;
-  for (const lv of LEVELS) {
+  for (const lv of levels) {
     const i = lv.level - 1;
     const pick = (k) => m[(i + k) % m.length];
     team.roles[lv.level] = {
@@ -723,22 +715,23 @@ export function startEpisode(comp, teacher) {
   comp.episodeStartedAt = clock.now();
   comp.audio.bgm = true; // 遊戲開始：背景音樂自動開始
   audit(comp, teacher, 'START_EPISODE');
-  triggerAudio(comp, 'E1_INTRO', { by: teacher, auto: true });
+  triggerAudio(comp, episodeOf(comp).audio.intro, { by: teacher, auto: true });
   changed(comp, 'episode-start');
 }
 
 export function startLevel(comp, teacher, n, { overrideUntaught = false } = {}) {
   requireOwner(comp, teacher);
   n = Number(n);
-  const lv = LEVEL_BY_NUM[n];
+  const ep = episodeOf(comp);
+  const lv = ep.levelByNum[n];
   if (!lv) throw new HttpError(400, '沒有此關卡。');
   if (comp.paused) throw new HttpError(409, '比賽暫停中，請先繼續。');
   if (!(comp.status === STATUS.LOBBY || /^RUNNING_LEVEL_/.test(comp.status))) throw new HttpError(409, '現在不能開始關卡（請先批准數據並開放 Lobby）。');
   if (!comp.approval) throw new HttpError(409, '未批准數據，不可開始正式比賽。', 'NOT_APPROVED');
   if (comp.levels[n].phase !== 'pending') throw new HttpError(409, `第 ${n} 關已${comp.levels[n].phase === 'active' ? '在進行中' : '結束或略過'}。`);
-  const active = LEVELS.find((l) => comp.levels[l.level].phase === 'active');
+  const active = ep.levels.find((l) => comp.levels[l.level].phase === 'active');
   if (active) throw new HttpError(409, `第 ${active.level} 關仍在進行中，請先結束該關。`);
-  const earlier = LEVELS.filter((l) => l.level < n && comp.levels[l.level].phase === 'pending');
+  const earlier = ep.levels.filter((l) => l.level < n && comp.levels[l.level].phase === 'pending');
   if (earlier.length) throw new HttpError(409, `請先完成或略過第 ${earlier.map((l) => l.level).join('、')} 關。`);
   const untaught = untaughtFor(comp, n);
   if (untaught.length && !overrideUntaught) {
@@ -754,7 +747,7 @@ export function startLevel(comp, teacher, n, { overrideUntaught = false } = {}) 
   comp.status = runningStatus(n);
   audit(comp, teacher, 'START_LEVEL', { level: n });
   studentSfx(comp, null, 'unlock', `unlock-${n}-${now}`);
-  triggerAudio(comp, `L${n}_OPEN`, { by: teacher, auto: true });
+  triggerAudio(comp, ep.audio.open(n), { by: teacher, auto: true });
   changed(comp, 'level-start');
 }
 
@@ -768,8 +761,9 @@ export function endLevel(comp, by, n, reason = 'manual') {
   l.phase = 'ended';
   l.endReason = reason;
   audit(comp, by, 'END_LEVEL', { level: n, reason });
-  if (n < 5) triggerAudio(comp, `L${n}_CLOSE`, { by, auto: true });
-  else triggerAudio(comp, 'E1_FINAL_REVEAL', { by, auto: true });
+  const ep = episodeOf(comp);
+  if (n < ep.lastLevel) triggerAudio(comp, ep.audio.close(n), { by, auto: true });
+  else triggerAudio(comp, ep.audio.final, { by, auto: true });
   changed(comp, 'level-end');
 }
 
@@ -879,7 +873,7 @@ export function pause(comp, by, reason = '老師暫停') {
   comp.pauseReason = reason;
   comp.prevStatus = comp.status;
   comp.status = STATUS.PAUSED;
-  for (const lv of LEVELS) {
+  for (const lv of episodeOf(comp).levels) {
     const l = comp.levels[lv.level];
     if (l.phase === 'active' && !l.pauseStartedAt) l.pauseStartedAt = now;
   }
@@ -899,7 +893,7 @@ export function recoverAfterRestart(lastAliveAt, now = clock.now()) {
   const gapS = Math.max(1, Math.round((now - at) / 1000));
   for (const comp of Object.values(db.state.competitions)) {
     if (comp.paused) continue; // 老師在中斷前已暫停：暫停時間照常計算，不需處理
-    const active = LEVELS.filter((lv) => comp.levels[lv.level]?.phase === 'active');
+    const active = episodeOf(comp).levels.filter((lv) => comp.levels[lv.level]?.phase === 'active');
     if (!active.length) continue;
     comp.paused = true;
     comp.pauseReason = `伺服器曾中斷約 ${gapS} 秒，系統已自動暫停並補回中斷期間的作答時間。請確認學生已重新連線，然後按「繼續」。`;
@@ -918,13 +912,13 @@ export function recoverAfterRestart(lastAliveAt, now = clock.now()) {
 
 /** 是否有關卡正在計時（需要寫入「伺服器仍在運行」紀錄） */
 export function anyLevelRunning() {
-  return Object.values(db.state.competitions).some((c) => !c.paused && LEVELS.some((lv) => c.levels[lv.level]?.phase === 'active'));
+  return Object.values(db.state.competitions).some((c) => !c.paused && Object.values(c.levels).some((l) => l?.phase === 'active'));
 }
 
 export function resume(comp, by) {
   if (!comp.paused) return;
   const now = clock.now();
-  for (const lv of LEVELS) {
+  for (const lv of episodeOf(comp).levels) {
     const l = comp.levels[lv.level];
     if (l.pauseStartedAt) { l.pausedMs += now - l.pauseStartedAt; l.pauseStartedAt = null; }
   }
@@ -939,7 +933,7 @@ export function resume(comp, by) {
 export function showResults(comp, teacher) {
   requireOwner(comp, teacher);
   if (comp.paused) resume(comp, teacher);
-  const active = LEVELS.find((l) => comp.levels[l.level].phase === 'active');
+  const active = episodeOf(comp).levels.find((l) => comp.levels[l.level].phase === 'active');
   if (active) endLevel(comp, teacher, active.level, 'results');
   comp.status = STATUS.RESULTS;
   audit(comp, teacher, 'SHOW_RESULTS');
@@ -998,14 +992,14 @@ export function tick() {
   const now = clock.now();
   for (const comp of Object.values(db.state.competitions)) {
     if (comp.paused) continue;
-    for (const lv of LEVELS) {
+    for (const lv of episodeOf(comp).levels) {
       const l = comp.levels[lv.level];
       if (l.phase !== 'active') continue;
       const { remainingMs } = levelTiming(comp, lv.level, now);
       if (remainingMs <= 0) endLevel(comp, null, lv.level, 'timeout');
       else if (remainingMs <= 60000 && !l.warned) {
         l.warned = true;
-        triggerAudio(comp, 'TIMER_WARNING', { auto: true });
+        triggerAudio(comp, episodeOf(comp).audio.timerWarning, { auto: true });
         changed(comp, 'warning');
       }
     }
@@ -1019,7 +1013,7 @@ export function requestHint(comp, user, team, level) {
   if (!l || l.phase !== 'active') throw new HttpError(409, '此關不在進行中，不能使用提示。');
   if (comp.paused) throw new HttpError(409, '比賽暫停中。');
   const used = comp.hintUses.filter((h) => h.teamId === team.id && h.level === level);
-  const hints = LEVEL_BY_NUM[level].hints;
+  const hints = episodeOf(comp).levelByNum[level].hints;
   if (used.length >= hints.length) throw new HttpError(409, '本關的提示已全部使用。');
   const tier = used.length + 1;
   comp.hintUses.push({ teamId: team.id, level, tier, at: clock.now(), userId: user.id });
@@ -1048,7 +1042,7 @@ export function adjustScore(comp, teacher, teamId, delta, reason) {
 /** 取消有 Bug 的 Task：對所有隊伍同步等值處理（該 Task 不計入基礎分分母，錯誤提交不扣分） */
 export function cancelTask(comp, teacher, taskId, reason) {
   requireOwner(comp, teacher);
-  if (!TASK_BY_ID[taskId]) throw new HttpError(400, '沒有此 Task。');
+  if (!episodeOf(comp).taskById[taskId]) throw new HttpError(400, '沒有此 Task。');
   if (!reason) throw new HttpError(400, '取消題目需要註明原因。');
   if (comp.cancelledTasks.some((c) => c.taskId === taskId)) return;
   const before = Object.fromEntries(comp.teams.map((t) => [t.id, computeTeamScore(comp, t.id).total]));
@@ -1065,14 +1059,14 @@ export function audioAllowed(comp, ev) {
     case 'level_open': return comp.levels[ev.level].phase !== 'pending';
     case 'level_close': return ['ended', 'skipped'].includes(comp.levels[ev.level].phase);
     case 'first_clear': return !!comp.levels[ev.level].firstClear;
-    case 'final_reveal': return comp.levels[5].phase === 'ended';
+    case 'final_reveal': return comp.levels[episodeOf(comp).lastLevel].phase === 'ended';
     case 'timer_warning': return true;
     default: return false;
   }
 }
 
 export function triggerAudio(comp, eventId, { by = null, auto = false } = {}) {
-  const ev = AUDIO_EVENT_BY_ID[eventId];
+  const ev = episodeOf(comp).audioEventById[eventId];
   if (!ev || !ev.public) throw new HttpError(400, '沒有此公開音訊事件。');
   if (!audioAllowed(comp, ev)) throw new HttpError(409, ev.trigger === 'final_reveal' ? 'Spoiler Policy：第 5 關公共回合未完結，不能播放最終揭曉。' : '此音訊事件的觸發條件未達成（避免劇透）。', 'SPOILER_BLOCKED');
   comp.audio.seq += 1;

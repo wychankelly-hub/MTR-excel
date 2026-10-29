@@ -1,11 +1,12 @@
 // START 工作表內容（中文操作說明，唯讀）。不含任何答案或 Seed 運算規則。
-import { SERIES_TITLE, EPISODE_TITLE, TEMPLATE_VERSION, LEVELS } from '../episode1/blueprint.js';
+import { episodeOf } from '../episodes/index.js';
 
 export function startSheetLines(comp, team) {
+  const ep = episodeOf(comp);
   return [
-    `${SERIES_TITLE} ${EPISODE_TITLE}`,
+    `${ep.seriesTitle} ${ep.title}`,
     `隊伍：${team.name}（${team.code}）`,
-    `Challenge Version：${TEMPLATE_VERSION}`,
+    `Challenge Version：${ep.templateVersion}`,
     '',
     '操作說明：',
     '1. 只可以在作答範圍輸入公式；原始數據及設定儲存格已受保護。',
@@ -15,6 +16,6 @@ export function startSheetLines(comp, team) {
     '5. 老師開始某一關後，網站才會顯示該關的任務。',
     '',
     '關卡：',
-    ...LEVELS.map((l) => `L${l.level}  ${l.sheet}  ${l.title}`),
+    ...ep.levels.map((l) => `L${l.level}  ${l.sheet}  ${l.title}`),
   ];
 }

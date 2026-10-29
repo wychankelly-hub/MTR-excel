@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../server/config.js';
-import { ALL_LINES } from '../server/episode1/dialogue.js';
+import { allAudioEvents } from '../server/episodes/index.js';
 import { localTtsStatus, synthesizeLine, VOICE_PROFILES } from '../server/tts/local-tts.js';
 
 const args = process.argv.slice(2);
@@ -74,7 +74,9 @@ async function google(line) {
 }
 
 fs.mkdirSync(outDir, { recursive: true });
-const lines = ALL_LINES.filter((l) => !only || l.event_id === only || l.line_id === only);
+// 所有劇集的對白；--only 可以是事件、句子或劇集編號（例如 E2）
+const ALL_LINES = allAudioEvents().flatMap((e) => e.lines.map((l) => ({ ...l, episode: e.episode })));
+const lines = ALL_LINES.filter((l) => !only || l.event_id === only || l.line_id === only || l.episode === only);
 let made = 0;
 const manifestFile = path.join(outDir, 'tts-manifest.json');
 const manifest = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')) : {};

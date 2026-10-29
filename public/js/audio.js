@@ -74,7 +74,7 @@ export class VoicePlayer {
   enqueue(item) {
     // 老師連續觸發多個事件時，只保留最新幾個，避免字幕遠遠落後（最終揭曉永不丟棄）
     while (this.queue.length >= 2) {
-      const i = this.queue.findIndex((q) => q.eventId !== 'E1_FINAL_REVEAL');
+      const i = this.queue.findIndex((q) => !/_FINAL_REVEAL$/.test(q.eventId));
       if (i < 0) break;
       this.queue.splice(i, 1);
     }

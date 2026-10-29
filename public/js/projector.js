@@ -90,14 +90,14 @@ function setState(s) {
 
 function render() {
   $('title').textContent = state.title;
-  $('subtitle').textContent = `Episode 1《新人報到》${state.classCode ? `・${state.classCode}` : ''}`;
+  $('subtitle').textContent = `${state.episodeTitle || ''}${state.classCode ? `・${state.classCode}` : ''}`;
   $('status').textContent = state.paused ? '⏸ 暫停中' : STATUS_LABEL[state.status] || state.status;
   const lv = state.levels.find((l) => l.phase === 'active') || [...state.levels].reverse().find((l) => l.phase !== 'pending');
   clear($('lvl'), lv ? [h('span.line-chip', { style: { background: 'var(--accent)', fontSize: '1rem', height: '1.9em' } }, `L${lv.level}`), h('strong', { style: { fontSize: '1.3rem' } }, lv.title)] : null);
   clear($('banner'), demoBanner(state.demo), state.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0, fontSize: '1.4rem', textAlign: 'center', fontWeight: 900 } }, `⏸ 比賽暫停中（暫停期間不計時）${state.pauseReason ? `：${state.pauseReason}` : ''}`) : null);
   clear($('route'), routeMap(state.levels, { color: '#D12B2B' }));
   // 調查線索（L1–L4 只暗示時段異常）
-  clear($('clues'), state.reveal ? null : state.levels.filter((l) => l.clue && l.level < 5).map((l) => h('div.clue', `🔎 L${l.level}：${l.clue}`)));
+  clear($('clues'), state.reveal ? null : state.levels.filter((l) => l.clue && l.level < state.levels.length).map((l) => h('div.clue', `🔎 L${l.level}：${l.clue}`)));
   renderOverlay(lv);
   board.update(state.leaderboard);
   $('board').querySelector('h2').replaceChildren('🚆 即時排行榜', state.leaderboardState.frozen ? h('span.pill.warn', '❄ 已凍結') : '');

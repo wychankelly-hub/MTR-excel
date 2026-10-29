@@ -142,6 +142,7 @@ function currentLevel() {
 function render() {
   if (!state) return;
   $('title').textContent = state.title;
+  if ($('subtitle') && state.episodeTitle) $('subtitle').textContent = state.episodeTitle;
   clear($('banner'), demoBanner(state.demo), state.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0, textAlign: 'center', fontWeight: 800 } }, `⏸ 比賽暫停中：${state.pauseReason || ''}（暫停期間不計時）`) : null);
   if (!state.team) { if (state.waiting) renderWaiting(); else renderJoin(); return; }
   if (mode === 'waiting' || mode === 'join') mode = null;
@@ -341,7 +342,7 @@ function renderPanel() {
     h('div.card',
       h('div.task-tabs', tasks.map((t) => h(`button.task-tab${t.id === task.id ? '.on' : ''}${t.best === t.points ? '.done' : ''}${t.latest && t.latest.status === 'REJECTED' ? '.bad' : ''}`, {
         type: 'button', onclick: () => { activeTask[lv.level] = t.id; renderPanel(); gotoTask(lv, t); },
-      }, t.state === 'locked' ? '🔒 ' : '', t.bonus ? '★ Bonus' : t.id.split('-')[1], t.best === t.points ? ' ✓' : ''))),
+      }, t.state === 'locked' ? '🔒 ' : '', t.bonus ? '★ Bonus' : t.id.split('-').at(-1), t.best === t.points ? ' ✓' : ''))),
       taskCard(lv, task, canSubmit && !blockedByCaptain),
       blockedByCaptain ? h('p.notice.warn', '老師設定了只由隊長提交；你可以協助檢查及分析。') : null),
     story ? h('div.card', { style: { padding: '10px' } }, story) : null,
@@ -528,7 +529,7 @@ function renderResults() {
   const top = (state.leaderboard || []).slice(0, 3);
   const order = [top[1], top[0], top[2]].filter(Boolean);
   clear(box,
-    state.reveal ? h('div.card', { style: { textAlign: 'center' } }, h('div.muted', '秘密字詞'), h('div', { style: { fontSize: '3.2rem', fontWeight: 900, letterSpacing: '.3em', color: 'var(--accent)' } }, state.reveal.word), h('div', { style: { fontWeight: 800 } }, state.reveal.teaser)) : null,
+    state.reveal ? h('div.card', { style: { textAlign: 'center' } }, h('div.muted', state.reveal.label || '秘密字詞'), h('div', { style: { fontSize: '3.2rem', fontWeight: 900, letterSpacing: '.3em', color: 'var(--accent)' } }, state.reveal.word), h('div', { style: { fontWeight: 800 } }, state.reveal.teaser)) : null,
     h('div.card', { style: { textAlign: 'center' } },
       h('h1', '🏁 比賽結果'),
       mine ? h('p', { style: { fontSize: '1.2rem' } }, `你們的名次：第 ${mine.rank} 名・${mine.total} 分`) : h('p', `你們的總分：${state.score.total} 分`),

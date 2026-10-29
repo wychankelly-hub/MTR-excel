@@ -68,7 +68,7 @@ async function init() {
 
 async function loadComps() {
   comps = await api('GET', '/teacher/competitions');
-  clear($('comp-pick'), h('option', { value: '' }, '＋ 新增比賽'), comps.map((c) => h('option', { value: c.id, selected: c.id === compId }, `${c.classCode ? `${c.classCode}｜` : ''}${c.title}（${STATUS_LABEL[c.status] || c.status}${c.adapter === 'google' ? '・Google Sheets' : ''}）`)));
+  clear($('comp-pick'), h('option', { value: '' }, '＋ 新增比賽'), comps.map((c) => h('option', { value: c.id, selected: c.id === compId }, `${c.classCode ? `${c.classCode}｜` : ''}${c.episode || 'E1'}・${c.title}（${STATUS_LABEL[c.status] || c.status}${c.adapter === 'google' ? '・Google Sheets' : ''}）`)));
 }
 
 async function selectComp(id) {
@@ -147,13 +147,22 @@ function stepper() {
 }
 
 // ======================================================================= A. 設定
+let setupEpisode = null; // 建立新比賽時選擇的劇集
+let setupDraft = null;
+
 function viewSetup() {
   const isNew = !comp;
   const s = comp?.settings;
   const googleReady = sys?.google?.ready;
+  const episodes = cfg.episodes || [];
+  const epCfg = episodes.find((e) => e.id === (comp?.episode || setupEpisode)) || episodes.at(-1) || { id: 'E1', levels: cfg.levels, skills: DEFAULT_SKILLS, hasBonus: true, defaultCompTitle: '定過抬油：站長爭奪戰 E1' };
   const f = {
-    title: h('input', { value: comp?.title || '定過抬油：站長爭奪戰 E1', maxlength: 80, style: { width: '100%' } }),
-    classCode: h('input', { value: comp?.classCode || '', maxlength: 20, placeholder: '例如 4A', disabled: !isNew }),
+    episode: h('select', {
+      disabled: !isNew,
+      onchange: (e) => { setupDraft = { title: f.title.value, classCode: f.classCode.value }; if (episodes.some((x) => x.defaultCompTitle === f.title.value)) setupDraft.title = null; setupEpisode = e.target.value; renderView(); },
+    }, episodes.map((e) => h('option', { value: e.id, selected: e.id === epCfg.id }, e.title))),
+    title: h('input', { value: comp?.title || setupDraft?.title || epCfg.defaultCompTitle, maxlength: 80, style: { width: '100%' } }),
+    classCode: h('input', { value: comp?.classCode || setupDraft?.classCode || '', maxlength: 20, placeholder: '例如 4A', disabled: !isNew }),
     teamCount: h('select', { disabled: !isNew && !['DRAFT', 'PREFLIGHT'].includes(comp.status) }, [4, 5, 6, 7].map((n) => h('option', { value: n, selected: (s?.teamCount ?? 6) === n }, `${n} 隊`))),
     adapter: h('select', { disabled: !isNew },
       h('option', { value: 'builtin', selected: !comp || comp.adapter !== 'google' }, '內置工作表（建議：學生在遊戲網站內作答，不需要 Google Sheets）'),
@@ -166,10 +175,11 @@ function viewSetup() {
     bonus: h('input', { type: 'checkbox', checked: !!s?.bonusEnabled }),
     captain: h('input', { type: 'checkbox', checked: !!s?.captainOnlySubmit }),
   };
-  const times = cfg.levels.map((l) => h('input', { type: 'number', min: 1, max: 60, step: 0.5, value: (s?.levelSeconds?.[l.level] ?? l.defaultSeconds) / 60, style: { width: '5em' }, disabled: comp && comp.levels[l.level - 1].phase !== 'pending', 'aria-label': `第 ${l.level} 關分鐘` }));
+  const times = epCfg.levels.map((l) => h('input', { type: 'number', min: 1, max: 60, step: 0.5, value: (s?.levelSeconds?.[l.level] ?? l.defaultSeconds) / 60, style: { width: '5em' }, disabled: comp && comp.levels[l.level - 1].phase !== 'pending', 'aria-label': `第 ${l.level} 關分鐘` }));
   const skills = comp?.skills || [];
-  const skillBoxes = (comp ? skills : DEFAULT_SKILLS).map((k) => h('label', h('input', { type: 'checkbox', value: k.id, checked: !s || s.taughtSkills.includes(k.id) }), k.label));
+  const skillBoxes = (comp ? skills : epCfg.skills || DEFAULT_SKILLS).map((k) => h('label', h('input', { type: 'checkbox', value: k.id, checked: !s || s.taughtSkills.includes(k.id) }), k.label));
   const gather = () => ({
+    episode: epCfg.id,
     title: f.title.value,
     classCode: f.classCode.value,
     teamCount: Number(f.teamCount.value),
@@ -182,7 +192,7 @@ function viewSetup() {
     requireGoogle: f.requireGoogle.checked,
     allowedDomains: f.allowed.value.split(/[\s,;]+/).filter((x) => x && !x.includes('@')),
     allowedEmails: f.allowed.value.split(/[\s,;]+/).filter((x) => x.includes('@')),
-    levelSeconds: Object.fromEntries(cfg.levels.map((l, i) => [l.level, Math.round(Number(times[i].value) * 60)])),
+    levelSeconds: Object.fromEntries(epCfg.levels.map((l, i) => [l.level, Math.round(Number(times[i].value) * 60)])),
     taughtSkills: skillBoxes.map((l) => l.querySelector('input')).filter((x) => x.checked).map((x) => x.value),
   });
   const untaught = comp ? Object.entries(comp.untaught).filter(([, v]) => v.length) : [];
@@ -190,14 +200,15 @@ function viewSetup() {
     h('div.card',
       h('h2', isNew ? '建立新比賽' : '比賽設定'),
       h('div.col',
+        h('label', { style: { display: 'block' } }, '劇集', h('div', f.episode)),
         h('label', { style: { display: 'block' } }, '比賽標題', f.title),
         h('div.row', h('label', '班別代號', f.classCode), h('label', '隊伍數目', f.teamCount)),
         h('label', { style: { display: 'block' } }, '工作表模式', h('div', f.adapter)),
         h('small.muted', '內置工作表：每隊一份工作表，只有該隊學生可以查看及編輯；作答逐格儲存在雲端資料庫，隊友即時同步。'),
         h('label', f.taskByTask, '逐題開放（開始關卡時只開放第一題，其餘題目由老師在「G. 題目及工作表」逐題開放）'),
         h('label', f.lockOnComplete, '全對的題目自動鎖定（避免之後誤改；老師可重開）'),
-        h('div', h('strong', '每關時間（分鐘）'), h('div.row', cfg.levels.map((l, i) => h('label', `L${l.level}`, times[i])))),
-        h('label', f.bonus, '開啟 Bonus 加題（L1 MIN，+50；所有隊伍相同機會）'),
+        h('div', h('strong', '每關時間（分鐘）'), h('div.row', epCfg.levels.map((l, i) => h('label', `L${l.level}`, times[i])))),
+        epCfg.hasBonus ? h('label', f.bonus, '開啟 Bonus 加題（L1 MIN，+50；所有隊伍相同機會）') : null,
         h('label', f.captain, '只容許隊長（Captain）提交'),
         h('div', h('strong', '班別及分隊（防止學生進入錯誤班別或隊伍）'),
           h('div.row', h('label', '分隊方式', f.teamSelection), h('label', f.requireGoogle, '學生必須以 Google 帳戶登入')),
@@ -206,6 +217,7 @@ function viewSetup() {
           isNew ? h('button.primary', { type: 'button', onclick: async () => {
             try {
               const r = await api('POST', '/teacher/competitions', gather());
+              setupDraft = null;
               await loadComps();
               tab = 'preflight';
               await selectComp(r.id);
@@ -328,7 +340,7 @@ function viewPreflight() {
         h('dt', 'Preflight'), h('dd', g.pass ? h('span.pill.ok', '全部通過') : h('span.pill.bad', '未通過')),
         comp.approval ? [h('dt', '批准'), h('dd', `${fmtClock(comp.approval.at)}・指紋 ${comp.approval.fingerprint.slice(0, 12)}…`)] : null) : null),
     g ? h('div.card', h('div.table-scroll', h('table',
-      h('thead', h('tr', h('th', '隊伍'), h('th', 'Preflight'), h('th', '生成嘗試'), h('th', 'L1 系數'), h('th', 'L2 最高人流'), h('th', 'L3 合資格'), h('th', 'L4 類別／門檻（=門檻件數）'), h('th', 'L5 代碼'), h('th', ''))),
+      h('thead', h('tr', h('th', '隊伍'), h('th', 'Preflight'), h('th', '生成嘗試'), (comp.flagTable?.labels || []).map((l) => h('th', l)), h('th', ''))),
       h('tbody', comp.teams.map((t) => {
         const gt = g.teams[t.id]; const p = g.preflight[t.id];
         if (!gt) return null;
@@ -336,11 +348,7 @@ function viewPreflight() {
           h('td', h('span.dot', { style: { background: t.color } }), ' ', t.name),
           h('td', p.pass ? h('span.pill.ok', `${p.total}/${p.total}`) : h('span.pill.bad', `${p.total - p.failed.length}/${p.total}`)),
           h('td.num', gt.attempts),
-          h('td.flag', gt.flags.L1_multiplier),
-          h('td.flag', gt.flags.L2_peakFlow),
-          h('td.flag', gt.flags.L3_eligible),
-          h('td.flag', `${gt.flags.L4_targetCategory} / ${gt.flags.L4_minValue}（${gt.flags.L4_itemsExactlyAtThreshold}）`),
-          h('td.flag', gt.flags.L5_codes),
+          (comp.flagTable?.rows[t.id] || []).map((v) => h('td.flag', String(v))),
           h('td', h('button.small', { type: 'button', onclick: () => showPreflight(t.id) }, '查看')));
       }))))) : null);
 }
@@ -434,14 +442,16 @@ function viewLive() {
         h('div.event-chips', comp.audio.events.map((e) => h('button.small', {
           type: 'button', disabled: !e.allowed, title: e.allowed ? `${e.lineCount} 句` : 'Spoiler Policy：條件未達成',
           onclick: () => act(() => post('/audio/trigger', { eventId: e.id }), `已播放 ${e.id}`),
-        }, comp.audio.log.some((x) => x.eventId === e.id) ? '⟲ ' : '▶ ', EVENT_LABEL[e.id] || e.id))))));
+        }, comp.audio.log.some((x) => x.eventId === e.id) ? '⟲ ' : '▶ ', eventLabel(e.id)))))));
 }
 
-const EVENT_LABEL = {
-  E1_INTRO: '開場', L1_OPEN: 'L1 開場', L1_FIRST_CLEAR: 'L1 首隊', L1_CLOSE: 'L1 結束', L2_OPEN: 'L2 開場', L2_FIRST_CLEAR: 'L2 首隊', L2_CLOSE: 'L2 結束',
-  L3_OPEN: 'L3 開場', L3_FIRST_CLEAR: 'L3 首隊', L3_CLOSE: 'L3 結束', L4_OPEN: 'L4 開場', L4_FIRST_CLEAR: 'L4 首隊', L4_CLOSE: 'L4 結束（線索）',
-  L5_OPEN: 'L5 開場', L5_FIRST_CLEAR: 'L5 首隊', E1_FINAL_REVEAL: '最終揭曉', TIMER_WARNING: '剩一分鐘',
-};
+// 事件名稱（各集通用：E2_L1_OPEN → L1 開場）
+function eventLabel(id) {
+  const k = id.replace(/^E\d+_(?=L\d|INTRO|FINAL|TIMER)/, '');
+  const m = k.match(/^L(\d)_(OPEN|FIRST_CLEAR|CLOSE)$/);
+  if (m) return `L${m[1]} ${{ OPEN: '開場', FIRST_CLEAR: '首隊', CLOSE: '結束' }[m[2]]}`;
+  return { E1_INTRO: '開場', INTRO: '開場', FINAL_REVEAL: '最終揭曉', E1_FINAL_REVEAL: '最終揭曉', TIMER_WARNING: '剩一分鐘' }[k] || id;
+}
 
 function miniBoard(rows) {
   return h('table', h('thead', h('tr', h('th', '#'), h('th', '隊伍'), h('th', '進度'), h('th.num', '基礎'), h('th.num', '總分'))),

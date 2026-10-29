@@ -50,6 +50,9 @@ test('多瀏覽器：課堂流程、劇情聲音（投影）與學生遊戲音�
     await T.waitForURL('**/teacher');
     await T.waitForSelector('#comp-pick option', { state: 'attached' });
     await T.selectOption('#comp-pick', ''); // 「＋ 新增比賽」（雲端資料庫可能已有舊比賽）
+    // 預設是最新一集；此流程測試第一集（劇集選單改變後表格會重繪，標題自動改為該集預設標題）
+    await T.locator('label:has-text("劇集") select').selectOption('E1');
+    await T.waitForFunction(() => [...document.querySelectorAll('input')].some((i) => i.value.endsWith('E1')));
     await T.click('button:has-text("建立比賽")');
     await T.waitForSelector('text=Dataset Preflight');
     await T.click('button:has-text("生成數據")');

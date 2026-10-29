@@ -18,7 +18,7 @@ export const SPEAKERS = {
 //   final_reveal   L5 截止後（Spoiler Policy：L5 未完結前一律拒絕播放）
 //   timer_warning  回合剩 60 秒
 // spoiler_level：none / partial（只有部分線索）/ final（揭曉 LUNCH）
-const E = (id, trigger, level, spoiler, lines, extra = {}) => ({ id, trigger, level, spoiler, lines, ...extra });
+export const E = (id, trigger, level, spoiler, lines, extra = {}) => ({ id, trigger, level, spoiler, lines, ...extra });
 
 const RAW_EVENTS = [
   E('E1_INTRO', 'episode_start', 0, 'none', [
@@ -79,8 +79,14 @@ function estimateSeconds(text) {
   return Math.max(2, Math.min(5, Math.round((n / 4.5) * 10) / 10));
 }
 
-export const AUDIO_EVENTS = RAW_EVENTS.map((ev) => ({
+/** 把劇本整理成配音事件（每句一個 Dialogue Asset）；第二集起亦使用 */
+export function buildAudioEvents(rawEvents, episode) {
+  return rawEvents.map((ev) => buildEvent(ev, episode));
+}
+
+const buildEvent = (ev, episode) => ({
   ...ev,
+  episode,
   public: !ev.teamOnly,
   lines: ev.lines.map(([speaker, text, ttsText], i) => {
     const lineId = `${ev.id}_${String(i + 1).padStart(2, '0')}`;
@@ -100,7 +106,9 @@ export const AUDIO_EVENTS = RAW_EVENTS.map((ev) => ({
       asset_status: 'missing', // 伺服器啟動時會按 public/audio 實際檔案更新
     };
   }),
-}));
+});
+
+export const AUDIO_EVENTS = buildAudioEvents(RAW_EVENTS, 'E1');
 
 export const AUDIO_EVENT_BY_ID = Object.fromEntries(AUDIO_EVENTS.map((e) => [e.id, e]));
 export const ALL_LINES = AUDIO_EVENTS.flatMap((e) => e.lines);

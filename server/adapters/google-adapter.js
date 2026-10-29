@@ -9,7 +9,8 @@ import { sheets as sheetsApi } from '@googleapis/sheets';
 import { drive as driveApi } from '@googleapis/drive';
 import { config } from '../config.js';
 import { db } from '../store.js';
-import { LEVELS, SERIES_TITLE } from '../episode1/blueprint.js';
+import { SERIES_TITLE } from '../episode1/blueprint.js';
+import { episodeOf } from '../episodes/index.js';
 import { expandRange, parseAddr, indexToCol } from '../engine/refs.js';
 import { startSheetLines } from './start-sheet.js';
 
@@ -122,6 +123,7 @@ export class GoogleAdapter {
       }
       const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: 'sheets(properties(sheetId,title),protectedRanges(protectedRangeId))' });
       const existing = meta.data.sheets || [];
+      const LEVELS = episodeOf(comp).levels;
       const wanted = ['START', ...LEVELS.map((l) => l.sheet)];
       const reqs = [{ updateSpreadsheetProperties: { properties: { locale: 'en_US', timeZone: 'Asia/Hong_Kong' }, fields: 'locale,timeZone' } }];
       // 先移除舊保護（重新填充時）
@@ -210,7 +212,7 @@ export class GoogleAdapter {
   /** 讀取某關工作表的公式字串與計算後數值（提交時使用） */
   async readLevel(comp, team, levelNum) {
     const { sheets } = this.clients();
-    const lv = LEVELS.find((l) => l.level === levelNum);
+    const lv = episodeOf(comp).levels.find((l) => l.level === levelNum);
     const fileId = team.workbook?.fileId;
     if (!fileId) throw new SheetSyncError('這一隊尚未連接 Google Sheet，請通知老師。', { retryable: false, code: 'NO_WORKBOOK' });
     let f; let v;

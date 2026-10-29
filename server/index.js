@@ -22,7 +22,8 @@ import { bus } from './bus.js';
 import { assetTable, reviewAsset, uploadAsset, resolvedEvent, regenerateAsset, revertAsset, autoFillMissingAudio } from './audio-assets.js';
 import { localTtsStatus } from './tts/local-tts.js';
 import { googleCredentialStatus, oauthClient, OAUTH_SCOPES } from './adapters/google-adapter.js';
-import { SERIES_TITLE, EPISODE_TITLE, TEAM_PRESETS, LEVELS } from './episode1/blueprint.js';
+import { SERIES_TITLE, EPISODE_TITLE, TEAM_PRESETS } from './episode1/blueprint.js';
+import { EPISODE_LIST } from './episodes/index.js';
 
 export function createApp() {
   const app = express();
@@ -88,7 +89,8 @@ export function createApp() {
       googleClientId: config.googleClientId || null,
       demoLoginAllowed: config.allowDemoLogin,
       teams: TEAM_PRESETS,
-      levels: LEVELS.map((l) => ({ level: l.level, title: l.title, defaultSeconds: l.defaultSeconds, sheet: l.sheet })),
+      levels: EPISODE_LIST[0].levels.map((l) => ({ level: l.level, title: l.title, defaultSeconds: l.defaultSeconds, sheet: l.sheet })),
+      episodes: EPISODE_LIST.map((ep) => ({ id: ep.id, number: ep.number, title: ep.title, shortTitle: ep.shortTitle, defaultCompTitle: ep.defaultCompTitle, skills: ep.skills, hasBonus: ep.tasks.some((t) => t.bonus), levels: ep.levels.map((l) => ({ level: l.level, title: l.title, defaultSeconds: l.defaultSeconds, sheet: l.sheet })) })),
     });
   });
 
@@ -163,7 +165,7 @@ export function createApp() {
   api.get('/teacher/competitions', (req, res) => {
     const t = requireTeacher(req);
     res.json(Object.values(db.state.competitions).filter((c) => c.ownerId === t.id).sort((a, b) => b.createdAt - a.createdAt)
-      .map((c) => ({ id: c.id, title: c.title, classCode: c.classCode, status: c.status, adapter: c.adapter, createdAt: c.createdAt, joinCode: c.joinCode, teamCount: c.teams.length })));
+      .map((c) => ({ id: c.id, title: c.title, classCode: c.classCode, episode: c.episode || 'E1', status: c.status, adapter: c.adapter, createdAt: c.createdAt, joinCode: c.joinCode, teamCount: c.teams.length })));
   });
   api.post('/teacher/competitions', (req, res) => {
     const t = requireTeacher(req);
@@ -211,7 +213,7 @@ export function createApp() {
   api.get('/teacher/competitions/:id/export.csv', (req, res) => {
     const { comp } = owned(req);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="E1-results-${comp.classCode || comp.id}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${comp.episode || 'E1'}-results-${comp.classCode || comp.id}.csv"`);
     res.send(toCsv(resultsCsv(comp)));
   });
   api.post('/teacher/competitions/:id/export-google', async (req, res) => {

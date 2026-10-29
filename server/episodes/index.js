@@ -7,6 +7,13 @@ import * as fx1 from '../episode1/fixtures.js';
 import * as dlg1 from '../episode1/dialogue.js';
 import * as fb1 from '../episode1/feedback.js';
 import { preflightTeam as preflight1 } from '../episode1/preflight.js';
+import * as bp2 from '../episode2/blueprint.js';
+import * as gen2 from '../episode2/generator.js';
+import * as val2 from '../episode2/validators.js';
+import * as fx2 from '../episode2/fixtures.js';
+import * as dlg2 from '../episode2/dialogue.js';
+import * as fb2 from '../episode2/feedback.js';
+import { preflightTeam as preflight2 } from '../episode2/preflight.js';
 
 function makeEpisode(def) {
   const levels = def.levels;
@@ -58,7 +65,8 @@ export const E1 = makeEpisode({
     final: 'E1_FINAL_REVEAL',
     timerWarning: 'TIMER_WARNING',
   },
-  reveal: { word: 'LUNCH', teaser: '第二集預告：疑犯火箭仔' },
+  reveal: { word: 'LUNCH', label: '秘密字詞', teaser: '第二集預告：疑犯火箭仔' },
+  secretNotice: '你們已破解廣播密碼！請保密，等全班完成後一齊揭曉。',
   concepts: fb1.CONCEPTS,
   errors: fb1.ERRORS,
   reviewCards: fb1.REVIEW_CARDS,
@@ -79,8 +87,61 @@ export const E1 = makeEpisode({
   },
 });
 
-export const EPISODES = { E1 };
-export const EPISODE_LIST = [E1];
+export const E2 = makeEpisode({
+  id: 'E2',
+  number: 2,
+  title: bp2.EPISODE_TITLE,
+  shortTitle: '疑犯火箭仔',
+  seriesTitle: bp1.SERIES_TITLE,
+  defaultCompTitle: '定過抬油：站長爭奪戰 E2',
+  templateVersion: bp2.TEMPLATE_VERSION,
+  generatorVersion: bp2.GENERATOR_VERSION,
+  validatorVersion: bp2.VALIDATOR_VERSION,
+  rulesVersion: 'E2-RULES-1.0.0',
+  levels: bp2.LEVELS,
+  skills: bp2.SKILLS,
+  roleLabels: bp2.ROLE_LABELS,
+  publicLevel: bp2.publicLevel,
+  generateCompetitionDatasets: gen2.generateCompetitionDatasets,
+  preflightTeam: preflight2,
+  gradeTask: val2.gradeTask,
+  checkIntegrity: val2.checkIntegrity,
+  evaluateStudentLevel: val2.evaluateStudentLevel,
+  correctInputs: fx2.correctInputs,
+  equivalentInputs: fx2.equivalentInputs,
+  wrongCases: fx2.wrongCases,
+  audioEvents: dlg2.AUDIO_EVENTS,
+  audioEventById: dlg2.AUDIO_EVENT_BY_ID,
+  storyClues: dlg2.STORY_CLUES,
+  audio: {
+    intro: 'E2_INTRO',
+    open: (n) => `E2_L${n}_OPEN`,
+    close: (n) => `E2_L${n}_CLOSE`,
+    firstClear: (n) => `E2_L${n}_FIRST_CLEAR`,
+    final: 'E2_FINAL_REVEAL',
+    timerWarning: 'E2_TIMER_WARNING',
+  },
+  reveal: { word: '火箭仔清白', label: '真相', teaser: '第三集預告：最佳站長大決選' },
+  secretNotice: '你們已完成抽查安排！請保密，等全班完成後一齊揭曉真相。',
+  concepts: fb2.CONCEPTS,
+  errors: fb2.ERRORS,
+  reviewCards: fb2.REVIEW_CARDS,
+  codeLevel: {
+    MID_START_HARDCODED: 1, MID_START_OFF_BY_ONE: 1, CODE_LENGTH_FIXED: 1,
+    NOT_FOUND_MISSING: 2, RANGE_NOT_ABSOLUTE: 2, REVERSE_LOOKUP: 2,
+    ROUND_DIGITS: 3, INT_REQUIRED: 3, H1_NOT_FIXED: 3,
+    DIST_FORMULA: 4, RANK_ORDER: 4, HARDCODED_TEXT: 4,
+    RANK_RANGE_NOT_FIXED: 5, RANDOM_OFF_BY_ONE: 5,
+  },
+  flagColumns: [
+    ['L1_target', 'L1 目標證×次數'], ['L2_visitors', 'L2 訪客'], [(f) => `${f.L3_bag} / ${f.L3_total}`, 'L3 每袋／總額'],
+    ['L4_closest', 'L4 最接近'], ['L5_lockers', 'L5 櫃數'],
+  ],
+  summarizeParams: (level, d) => ({ ...d.params }),
+});
+
+export const EPISODES = { E1, E2 };
+export const EPISODE_LIST = [E1, E2];
 
 export function episodeById(id) {
   return EPISODES[id || 'E1'] || null;
