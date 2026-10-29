@@ -13,6 +13,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.js",
     "demo:bots": "node scripts/demo-bots.js",
+    "load:test": "node scripts/class-load-test.js",
     "google:smoke": "node scripts/google-smoke-test.js",
     "tts:generate": "node scripts/generate-tts.js",
     "preflight:report": "node scripts/preflight-report.js",

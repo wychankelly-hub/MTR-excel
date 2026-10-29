@@ -16,16 +16,19 @@
 ```
 server/
   engine/          公式解析與重算（refs、parser、ast、values、functions、workbook）
+  episodes/        劇集登記表（index.js：每集相同介面）、grading-kit（共用批改工具）
   episode1/        blueprint（題目藍圖）、generator（數據生成）、validators（逐題批改）、
                    feedback（中文回饋及賽後回顧）、fixtures（正確／常見錯誤公式）、preflight、dialogue（配音事件）
-  adapters/        demo-adapter（模擬工作表）、google-adapter（真實 Google Sheets）、start-sheet
+  episode2/        第二集《疑犯火箭仔》，結構與第一集相同
+  sheets.js        內置工作表：逐格儲存（版本號）、修改／衝突、練習副本、工作表內容及編輯規則
+  adapters/        demo-adapter（內置工作表；'builtin' 與 'demo' 相同）、google-adapter（舊模式 Google Sheets）、start-sheet
   competition.js   狀態機、隊伍、計時、提示、人工調分、音訊 Spoiler Policy
   submission.js    提交流程（冪等、序列化、快照、完整性、批改、交叉核對）
   scoring.js       由紀錄推導分數（冪等）及排名
   views.js         Teacher／Student／Projector 視圖（權限過濾）
   realtime.js      SSE
   audio-assets.js  音檔狀態、試聽批准、錄音上載
-public/            前端
+public/            前端（js/sheet-editor.js：內置工作表編輯器，直接使用伺服器的公式引擎 /engine/*）
 scripts/           demo-bots、google-smoke-test、generate-tts、preflight-report
 test/              驗收測試（a–g）及瀏覽器 E2E
 ```
@@ -61,7 +64,7 @@ test/              驗收測試（a–g）及瀏覽器 E2E
 | TeacherAuditLog | `competition.audit[]` |
 
 ## 持久化及重新啟動
-- `server/store.js`：PostgreSQL（`ty_kv` 鍵值表、`ty_assets` 檔案表）或本機檔案。比賽紀錄分成 `competition:<id>`（核心）、`competition:<id>:sub:<n>`（每 25 個提交）、`competition:<id>:audit:<n>`（每 100 項審計），只寫入有改變的鍵；投影畫面即時狀態不寫入。
+- `server/store.js`：PostgreSQL（`ty_kv` 鍵值表、`ty_assets` 檔案表、`ty_cells` 工作表儲存格表）或本機檔案。比賽紀錄分成 `competition:<id>`（核心）、`competition:<id>:sub:<n>`（每 25 個提交）、`competition:<id>:audit:<n>`（每 100 項審計），只寫入有改變的鍵；投影畫面即時狀態不寫入。
 - 會改變資料的 API 在回覆前呼叫 `persistNow()`；未能寫入回覆 503 `NOT_SAVED`，學生端以同一 Idempotency Key 重試。
 - `owner` 鍵記錄目前負責的實例；寫入交易以 `SELECT … FOR UPDATE` 核對，舊實例被拒絕（`db.fenced`）。
 - 比賽計時中每 5 秒寫入 `heartbeat`；啟動時 `recoverAfterRestart()` 由最後一次 heartbeat 起暫停進行中的關卡。
@@ -85,5 +88,21 @@ test/              驗收測試（a–g）及瀏覽器 E2E
 | TriggerAudioEvent | `POST …/audio/trigger`、`…/audio/control` |
 | ExportResults | `GET …/export.csv`、`POST …/export-google` |
 
-## 擴展到 Episode 2／3
-新增 `server/episodeN/`（blueprint、generator、validators、fixtures、dialogue），計分（`scoring.js`）、登入、Adapter、提交流程不需改寫。Excel 桌面版可新增 Adapter，實作 `provision` 及 `readLevel` 兩個方法即可。
+## 內置工作表（取代 Google Sheets 作答）
+- **儲存**：每格一行（`ty_cells`：comp_id、team_id、sheet、addr、input、ver、by_user、at），與比賽紀錄在同一個受保護的交易內寫入；表格在啟動時自動建立。修改 API 先 `persistNow()` 才回覆及通知隊友，所以「已儲存」的修改在重新整理或伺服器重新啟動後一定存在。
+- **修改協定**：瀏覽器送出 `{a, i, base}`（儲存格、輸入、讀取時的版本號）。版本不符 → 回傳衝突及最新內容（不會無聲覆蓋）；不可編輯的格 → 拒絕（`PROTECTED`／`LOCKED`／`PAUSED`）。瀏覽器把約 0.15 秒內的修改合併成一批自動儲存、失敗自動重試。
+- **計算**：瀏覽器與伺服器使用同一套公式引擎（`server/engine`，以 `/engine/*` 提供給瀏覽器）；批改只採用伺服器的計算結果。
+- **權限**：隊伍一律由伺服器按登入帳戶決定（`teamOfUser`），網址／參數中的隊伍編號不被採用；未開始的關卡、未開放的題目不可讀寫；SSE 的儲存格及游標事件只送給該隊成員及該比賽的老師。
+- **練習副本**：工作表鍵 `sheet@reopenId`，由正式作答（或起始內容）複製；提交記錄 `practice: true`，計分一律排除。
+- **擴展**：工作表以 sheet 名稱為單位，已支援同一隊多張工作表；排序、篩選、圖表、樞紐分析可加在編輯器及引擎（第三集）。
+
+## 題目狀態及重開
+- `taskPhase`：未開放（locked）／進行中（active）／已截止（closed），由關卡計時及老師逐題控制（`taskOverrides`）決定。
+- `teamTaskState`：每隊每題；全對後自動鎖定（`lockOnComplete`）；`reopens[]` 記錄重開（practice／makeup、隊伍、是否重新開始、建立及結束時間），持久保存。
+- `editRulesFor(comp, team, level, layer)` 統一決定可編輯的格及原因，修改 API 及編輯器同時使用。
+
+## 多班別
+每場比賽有自己的代碼、名單、工作表、分數、排行榜及計時；隊伍編號只在比賽內有效，所以不同班可用相同隊名。分隊方式（老師分隊／學生自選一次）、學生名單（網域／電郵）及「必須以 Google 登入」在加入時於伺服器檢查。
+
+## 擴展到 Episode 3
+新增 `server/episodeN/`（blueprint、generator、validators、fixtures、feedback、dialogue、preflight），並在 `server/episodes/index.js` 登記；比賽記錄 `episode` 欄位決定使用哪一集（舊比賽沒有此欄位時視為 E1）。計分、登入、工作表、提交流程不需改寫。

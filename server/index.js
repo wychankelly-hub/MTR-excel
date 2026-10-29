@@ -29,6 +29,9 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  // 最近一次真實使用（健康檢查不計）：自我喚醒只在課堂期間進行
+  let lastActivity = Date.now();
+  app.use((req, res, next) => { if (req.path !== '/healthz') lastActivity = Date.now(); next(); });
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -511,10 +514,12 @@ export function startServer(port = config.port) {
     if (C.anyLevelRunning()) heartbeat(clock.now());
     if (++beats % 12 === 0) save();
   }, 5000);
-  // Render 免費方案閒置 15 分鐘會休眠：比賽進行中（大堂至結果）每 10 分鐘經公開網址自我喚醒一次
+  // Render 免費方案閒置 15 分鐘會休眠：上課期間（有比賽在大堂或進行中，而且 45 分鐘內有人使用）
+  // 每 10 分鐘經公開網址自我喚醒一次；下課後無人使用便停止，網站可以照常休眠（不會 24 小時運行）
   const awake = process.env.RENDER_EXTERNAL_URL ? setInterval(() => {
-    const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED|RESULTS)/.test(c.status));
-    if (live) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
+    const inLesson = Date.now() - lastActivity < 45 * 60 * 1000;
+    const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED)/.test(c.status));
+    if (live && inLesson) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
   }, 10 * 60 * 1000) : null;
   init().then(async () => {
     const moved = sheets.migrateLegacySheets();
@@ -529,7 +534,7 @@ export function startServer(port = config.port) {
     recovered = true;
     server.listen(port, () => {
       const f = features();
-      console.log(`\n${SERIES_TITLE} ${EPISODE_TITLE}`);
+      console.log(`\n${SERIES_TITLE}：${EPISODE_LIST.map((e) => e.title).join('、')}`);
       console.log(`伺服器：${config.publicBaseUrl}  （port ${server.address().port}）`);
       console.log(`資料儲存：${db.driver === 'postgres' ? '雲端 PostgreSQL（持久）' : `本機檔案 ${config.dataDir}${config.production ? '（⚠️ 雲端部署請設定 DATABASE_URL，否則重新部署會遺失資料）' : ''}`}`);
       console.log(`老師訪客登入：${f.demoLogin && config.demoTeacherPin ? (config.production ? '已開放（登入碼由 DEMO_TEACHER_PIN 設定）' : `已開放（PIN：${config.demoTeacherPin}）`) : '已停用'}`);
