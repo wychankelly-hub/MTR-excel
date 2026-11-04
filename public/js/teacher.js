@@ -634,6 +634,8 @@ function previewCard(team) {
       h('div.row', h('h3', { style: { margin: 0 } }, '只供老師（請勿投影）'), h('span.pill.bad', 'Teacher only')),
       h('h4', '參考公式'),
       h('div.mono', Object.entries(tc.reference).slice(0, 4).map(([a, f]) => h('div', `${a}: ${f}`)), Object.keys(tc.reference).length > 4 ? h('div.muted', `…共 ${Object.keys(tc.reference).length} 格（其餘按相對參照複製）`) : null),
+      tc.teacherNotes?.length ? [h('h4', '預期操作及答案'), h('ul', tc.teacherNotes.map((n) => h('li.mono', n)))] : null,
+      tc.answers && Object.keys(tc.answers).length ? h('div.mono', Object.entries(tc.answers).map(([a, v]) => h('div', `${a} = ${v}`))) : null,
       h('h4', `${team.name} 的預期結果`),
       h('div.mono', Object.entries(tc.expected).slice(0, 8).map(([a, v]) => h('div', `${a} = ${v}`))),
       h('h4', '評分點'),
@@ -659,7 +661,7 @@ function teacherSheet(team, lvT) {
     window.__tyTeacherEditor = qv.editor;
     qv.sheetKey = '';
   }
-  const tabs = comp.levelsTeacher.filter((l) => l.phase !== 'pending' || l.level === qv.level).map((l) => ({ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}` }));
+  const tabs = comp.levelsTeacher.filter((l) => l.phase !== 'pending' || l.level === qv.level).flatMap((l) => [{ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}` }, ...(l.extraSheets || []).map((x) => ({ sheet: x.sheet, layer: 'main', label: `　└ ${x.title}`, title: x.sheet }))]);
   const k = `${tabs.map((t) => t.sheet).join(',')}|${qv.level}|${qv.layer}`;
   if (qv.sheetKey !== k) {
     qv.sheetKey = k;

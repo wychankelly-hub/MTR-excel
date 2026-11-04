@@ -201,7 +201,7 @@ export function teacherView(comp) {
     skills: ep.skills,
     untaught: Object.fromEntries(ep.levels.map((l) => [l.level, untaughtFor(comp, l.level)])),
     levelsTeacher: ep.levels.map((lv) => ({
-      level: lv.level, sheet: lv.sheet, title: lv.title, skills: lv.skills, editable: lv.editable,
+      level: lv.level, sheet: lv.sheet, title: lv.title, skills: lv.skills, editable: lv.editable, extraSheets: (lv.extraSheets || []).map((x) => ({ sheet: x.sheet, title: x.title })),
       ...comp.levels[lv.level],
       timing: levelTiming(comp, lv.level),
       tasks: lv.tasks.map((t) => ({ id: t.id, points: t.points, bonus: !!t.bonus, instruction: t.instruction })),

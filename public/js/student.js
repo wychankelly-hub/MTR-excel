@@ -288,7 +288,8 @@ function renderSheetBox() {
     });
     window.__tyEditor = editor;
   }
-  const tabs = levels.map((l) => ({ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}`, title: l.sheet }));
+  // 每關的主要工作表＋額外的數據工作表（第三集：多工作表，唯讀）
+  const tabs = levels.flatMap((l) => [{ sheet: l.sheet, layer: 'main', label: `L${l.level} ${l.title}`, title: l.sheet }, ...(l.extraSheets || []).map((x) => ({ sheet: x.sheet, layer: 'main', label: `　└ ${x.title}`, title: `${x.sheet}（唯讀數據）` }))]);
   for (const p of state.practice || []) tabs.push({ sheet: p.sheet, layer: p.reopenId, label: `📝 練習 ${p.taskId}${p.compId !== state.id ? `（${p.episode}）` : ''}`, practice: true, title: '練習模式：不影響分數' });
   const active = levels.find((l) => l.phase === 'active');
   const key = tabs.map((t) => `${t.sheet}|${t.layer}`).join(',');
@@ -479,11 +480,11 @@ function taskCard(lv, t, canSubmit) {
   const mpState = (id) => (!latest?.markingPoints ? 'none' : latest.markingPoints.find((m) => m.id === id)?.passed ? 'pass' : 'fail');
   const statusPill = latest ? h(`span.pill.${latest.status === 'VERIFIED' ? 'ok' : ['RETRYABLE_ERROR', 'INTEGRITY_ERROR', 'DUPLICATE'].includes(latest.status) ? 'warn' : 'bad'}`, SUB_LABEL[latest.status] || latest.status) : null;
   return h(`div.task${done ? '.done' : ''}`, { style: { marginTop: '10px' }, id: `task-${t.id}` },
-    h('div.head', h('span.id', t.id), driverName ? h(`span.pill.${drv.tasks[t.id].isMe ? 'info' : ''}`, `🚆 Driver：${drv.tasks[t.id].isMe ? '你' : driverName}`) : null, t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), TASK_STATE[t.state] ? h(`span.pill.${TASK_STATE[t.state][0]}`, TASK_STATE[t.state][1]) : null, t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
+    h('div.head', h('span.id', t.id), t.tier === 'stretch' ? h('span.pill.warn', { title: '較深入的應用及推理（Level 4–5）' }, '★ 挑戰') : null, driverName ? h(`span.pill.${drv.tasks[t.id].isMe ? 'info' : ''}`, `🚆 Driver：${drv.tasks[t.id].isMe ? '你' : driverName}`) : null, t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), TASK_STATE[t.state] ? h(`span.pill.${TASK_STATE[t.state][0]}`, TASK_STATE[t.state][1]) : null, t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
     h('div.task-instr', richText(t.instruction)),
     h('div.submit-row',
       h('button.primary.big', { type: 'button', disabled: !canSubmit || pending[t.id] || t.cancelled, onclick: () => submit(t.id) }, pending[t.id] ? '⏳ 提交中…' : done ? '✓ 已核實（可再提交）' : '🚆 檢查／提交'),
-      editor ? h('button', { type: 'button', onclick: () => gotoTask(lv, t) }, `前往 ${t.cells.join('、')}`) : null),
+      editor ? h('button', { type: 'button', onclick: () => gotoTask(lv, t) }, `前往 ${t.cells.length ? t.cells.join('、') : t.focus}`) : null),
     notDriver && t.state === 'active' ? h('p.notice.info', { style: { margin: '6px 0' } }, drv.taskId === t.id ? `只有 Driver（${drv.driver?.name || '—'}）可以輸入及提交這一題。你可以在隊伍對話提出想法或公式。` : `隨機 Driver：請先完成目前的題目 ${drv.taskId || ''}，這一題稍後由新的 Driver 作答。`) : null,
     h('small.muted', latest ? `上次提交：${new Date(latest.at).toLocaleTimeString('zh-HK', { hour12: false })}・已批改 ${t.attempts} 次` : '提交時系統會讀取你們工作表的公式及計算結果，並以隱藏測試數據檢查。'),
     h('ul.mp', t.markingPoints.map((m) => h(`li.${done ? 'pass' : mpState(m.id)}`, `${m.label}（${m.max} 分）`))),

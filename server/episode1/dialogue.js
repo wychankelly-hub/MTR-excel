@@ -8,6 +8,9 @@ export const SPEAKERS = {
   bat: { name: '八仔', tone: '活潑、溫和、發音清楚', color: '#16a085' },
   uncle: { name: '喂喂叔', tone: '大聲、熱情', color: '#8e44ad' },
   passenger: { name: '乘客甲', tone: '不滿但有禮', color: '#7f8c8d' },
+  // 第三集
+  grumpy: { name: '暴躁阿叔', tone: '暴躁、語速快、大聲，但其實講道理', color: '#6d4c41' },
+  cat: { name: '咪咪', tone: '肥站長的貓，只會喵', color: '#f39c12' },
 };
 
 // trigger_policy：

@@ -14,6 +14,13 @@ import * as fx2 from '../episode2/fixtures.js';
 import * as dlg2 from '../episode2/dialogue.js';
 import * as fb2 from '../episode2/feedback.js';
 import { preflightTeam as preflight2 } from '../episode2/preflight.js';
+import * as bp3 from '../episode3/blueprint.js';
+import * as gen3 from '../episode3/generator.js';
+import * as val3 from '../episode3/validators.js';
+import * as fx3 from '../episode3/fixtures.js';
+import * as dlg3 from '../episode3/dialogue.js';
+import * as fb3 from '../episode3/feedback.js';
+import { preflightTeam as preflight3 } from '../episode3/preflight.js';
 
 function makeEpisode(def) {
   const levels = def.levels;
@@ -140,8 +147,61 @@ export const E2 = makeEpisode({
   summarizeParams: (level, d) => ({ ...d.params }),
 });
 
-export const EPISODES = { E1, E2 };
-export const EPISODE_LIST = [E1, E2];
+export const E3 = makeEpisode({
+  id: 'E3',
+  number: 3,
+  title: bp3.EPISODE_TITLE,
+  shortTitle: '暴躁阿叔',
+  seriesTitle: bp1.SERIES_TITLE,
+  defaultCompTitle: '定過抬油：站長爭奪戰 E3',
+  templateVersion: bp3.TEMPLATE_VERSION,
+  generatorVersion: bp3.GENERATOR_VERSION,
+  validatorVersion: bp3.VALIDATOR_VERSION,
+  rulesVersion: 'E3-RULES-1.0.0',
+  levels: bp3.LEVELS,
+  skills: bp3.SKILLS,
+  roleLabels: bp3.ROLE_LABELS,
+  publicLevel: bp3.publicLevel,
+  generateCompetitionDatasets: gen3.generateCompetitionDatasets,
+  preflightTeam: preflight3,
+  gradeTask: val3.gradeTask,
+  checkIntegrity: val3.checkIntegrity,
+  evaluateStudentLevel: val3.evaluateStudentLevel,
+  correctInputs: fx3.correctInputs,
+  equivalentInputs: fx3.equivalentInputs,
+  wrongCases: fx3.wrongCases,
+  audioEvents: dlg3.AUDIO_EVENTS,
+  audioEventById: dlg3.AUDIO_EVENT_BY_ID,
+  storyClues: dlg3.STORY_CLUES,
+  audio: {
+    intro: 'E3_INTRO',
+    open: (n) => `E3_L${n}_OPEN`,
+    close: (n) => `E3_L${n}_CLOSE`,
+    firstClear: (n) => `E3_L${n}_FIRST_CLEAR`,
+    final: 'E3_FINAL_REVEAL',
+    timerWarning: 'E3_TIMER_WARNING',
+  },
+  reveal: { word: '咪咪', label: '真兇', teaser: '全劇完：鎖機、保護工作表、核對數據！' },
+  secretNotice: '你們已找出真相！請保密，等全班完成後一齊揭曉。',
+  concepts: fb3.CONCEPTS,
+  errors: fb3.ERRORS,
+  reviewCards: fb3.REVIEW_CARDS,
+  codeLevel: {
+    ROWS_BROKEN: 1, SORT_LEVELS: 1, SUBTOTAL_NEEDED: 1, FILTER_ONE_CONDITION: 1,
+    BOUNDARY_GE: 2,
+    HOUR_AS_SERIES: 3, CHART_TYPE_TREND: 3,
+    PIVOT_AGG: 4, PIVOT_FILTER_MISSING: 4,
+    LOCK_NOT_FIXED: 5, ACTUAL_SETTING: 5, CONCLUSION_UNCLE: 5,
+  },
+  flagColumns: [
+    ['L1_uncleData', 'L1 阿叔 DATA'], [(f) => `${f.L2_missing} / ${f.L2_late}`, 'L2 消失／遲開'], ['L3_spike', 'L3 異常高'],
+    ['L4_peak', 'L4 高峰'], ['L5_minLock', 'L5 最少鎖定'],
+  ],
+  summarizeParams: (level, d) => ({ ...d.params }),
+});
+
+export const EPISODES = { E1, E2, E3 };
+export const EPISODE_LIST = [E1, E2, E3];
 
 export function episodeById(id) {
   return EPISODES[id || 'E1'] || null;

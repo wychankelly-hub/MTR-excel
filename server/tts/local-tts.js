@@ -22,6 +22,8 @@ export const VOICE_PROFILES = {
   bat: { label: '八仔：活潑、清脆（較高音）', speed: 1.0, pitch: 1.12, bass: 0 },
   uncle: { label: '喂喂叔：大聲、低沉', speed: 1.05, pitch: 0.74, bass: 3 },
   passenger: { label: '乘客甲：原聲', speed: 1.0, pitch: 1.0, bass: 0 },
+  grumpy: { label: '暴躁阿叔：低沉、急促', speed: 1.18, pitch: 0.8, bass: 3 },
+  cat: { label: '咪咪：高音', speed: 1.1, pitch: 1.35, bass: 0 },
 };
 
 let t2s = null;

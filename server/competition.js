@@ -433,9 +433,13 @@ export function teacherPreview(comp, teacher, teamId, taskId) {
       reference: Object.fromEntries(Object.entries(lv.referenceFormulas).filter(([a]) => inTask(a))),
       expected: Object.fromEntries(Object.entries(ds.ref[lv.level]).filter(([a]) => inTask(a)).map(([a, v]) => [a, typeof v === 'object' && v ? (v.code || JSON.stringify(v)) : v])),
       markingPoints: task.markingPoints,
+      // 第三集：預期的操作（排序、篩選、圖表、樞紐分析表、藍本）及該隊數據下的預期答案
+      teacherNotes: task.teacherNotes || [],
+      answers: Object.fromEntries(Object.entries(ep.correctInputs(taskId, ds) || {}).filter(([a, v]) => !a.startsWith('!') && !(typeof v === 'string' && v.startsWith('=')) && inTask(a))),
       commonErrors: ep.wrongCases(taskId, ds).map((c) => {
-        const first = Object.entries(c.inputs)[0];
-        return { name: c.name, sample: first ? `${first[0]}: ${first[1]}` : '', maxEarned: c.maxEarned, codes: c.codes, feedback: c.codes.map((code) => (ep.errors[code]?.text || code).replace('{cell}', cells[0]).replace('{detail}', '…')) };
+        const first = Object.entries(c.inputs).find(([a]) => inTask(a) || (task.meta || []).includes(a)) || Object.entries(c.inputs)[0];
+        const show = (v) => (v && typeof v === 'object' ? JSON.stringify(v).slice(0, 90) : v);
+        return { name: c.name, sample: first ? `${first[0]}: ${show(first[1])}` : '', maxEarned: c.maxEarned, codes: c.codes, feedback: c.codes.map((code) => (ep.errors[code]?.text || code).replace('{cell}', cells[0] || task.focus).replace('{detail}', '…')) };
       }),
       params: ep.summarizeParams(lv.level, ds.levels[lv.level]),
       hidden: ep.summarizeParams(lv.level, ds.hidden[lv.level]),

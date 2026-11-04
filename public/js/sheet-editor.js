@@ -468,9 +468,13 @@ export class SheetEditor {
     const cells = task.cells.flatMap(expand);
     this.highlight = new Set(cells);
     const f = P(task.focus || cells[0]);
-    const r = task.cells[0].split(':');
-    const s = P(r[0]); const e = P(r[1] || r[0]);
-    this.place(this.taskBox, this.rectOf(s.c, s.r, e.c, e.r));
+    if (task.cells.length) {
+      const r = task.cells[0].split(':');
+      const s = P(r[0]); const e = P(r[1] || r[0]);
+      this.place(this.taskBox, this.rectOf(s.c, s.r, e.c, e.r));
+    } else this.taskBox.hidden = true;
+    // 只需要分析工具的題目（例如圖表）：打開分析面板
+    if ((task.meta || []).some((m) => m !== '!SORT' && m !== '!FILTER')) this.tools?.openDrawer();
     this.refreshAll();
     this.setSelection(f);
     this.sink.focus({ preventScroll: true });
