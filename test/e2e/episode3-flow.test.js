@@ -245,6 +245,8 @@ test('第三集：排序、篩選、多工作表、圖表、樞紐分析表、�
     await T.reload();
     await T.click('button:has-text("G. 題目及工作表")');
     await T.waitForSelector('.teacher-only:has-text("預期操作及答案")');
+    await T.waitForSelector('.teacher-sheet .st-drawer .st-scen');
+    await T.screenshot({ path: path.join(SHOTS, 'e3-teacher-g.png'), fullPage: true });
     await D.reload();
     await D.waitForSelector('.st-drawer .st-scen td:text-is("LOCK15")');
 

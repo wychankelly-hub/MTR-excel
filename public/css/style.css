@@ -455,3 +455,6 @@ tr.on td { background: var(--info-bg); }
 .st-grid2 label { display: flex; flex-direction: column; gap: 2px; font-size: .9rem; }
 .st-chart-pv { border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
 @media (max-width: 1100px) { .st-drawer { width: 280px; } }
+/* 老師唯讀預覽（較窄）：分析面板收窄，工作表仍有足夠空間 */
+.se-ro .st-drawer { width: 230px; }
+.se-ro .st-chart text { font-size: 8px; }
