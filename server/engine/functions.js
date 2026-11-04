@@ -419,7 +419,143 @@ export const FUNCTIONS = {
     const f = 10 ** d;
     return Math.sign(n) * Math.floor(Math.abs(n) * f + 1e-9) / f;
   },
+  // ---------------------------------------------------------------- 第三集：多條件、篩選、文字及查找
+  COUNTIFS(ev, args) { return ifsAggregate('COUNTIFS', ev, args, 'count'); },
+  SUMIFS(ev, args) { return ifsAggregate('SUMIFS', ev, args, 'sum'); },
+  AVERAGEIFS(ev, args) { return ifsAggregate('AVERAGEIFS', ev, args, 'avg'); },
+  MAXIFS(ev, args) { return ifsAggregate('MAXIFS', ev, args, 'max'); },
+  MINIFS(ev, args) { return ifsAggregate('MINIFS', ev, args, 'min'); },
+  SUBTOTAL(ev, args) {
+    const e = argCount('SUBTOTAL', args, 2, 255); if (e) return e;
+    const fn = intArg(ev, args[0], 0); if (isError(fn)) return fn;
+    const kind = { 1: 'avg', 2: 'count', 3: 'counta', 4: 'max', 5: 'min', 9: 'sum' }[fn > 100 ? fn - 100 : fn];
+    if (!kind) return new ErrorValue('#VALUE!', 'SUBTOTAL 的功能編號只支援 1–5、9（或 101–105、109）');
+    const vals = [];
+    for (const a of args.slice(1)) {
+      const v = ev.evalNode(a);
+      if (!isRange(v)) { vals.push(v); continue; }
+      // 被篩選隱藏的列不計算（與試算表的 SUBTOTAL 相同）
+      const hidden = v.wb?.hiddenRows?.get(v.sheet);
+      const rows = v.values();
+      rows.forEach((row, i) => { if (!hidden?.has(v.r1 + i)) for (const x of row) vals.push(x); });
+    }
+    for (const v of vals) if (isError(v)) return v;
+    const nums = vals.filter((v) => typeof v === 'number');
+    switch (kind) {
+      case 'count': return nums.length;
+      case 'counta': return vals.filter((v) => !isBlank(v) && v !== '').length;
+      case 'sum': return nums.reduce((x, y) => x + y, 0);
+      case 'avg': return nums.length ? nums.reduce((x, y) => x + y, 0) / nums.length : new ErrorValue('#DIV/0!', 'SUBTOTAL 範圍內沒有數值');
+      case 'max': return nums.length ? Math.max(...nums) : 0;
+      default: return nums.length ? Math.min(...nums) : 0;
+    }
+  },
+  IFERROR(ev, args) {
+    const e = argCount('IFERROR', args, 2, 2); if (e) return e;
+    const v = scalar(ev, args[0]);
+    return isError(v) ? scalar(ev, args[1]) : v;
+  },
+  REPT(ev, args) {
+    const e = argCount('REPT', args, 2, 2); if (e) return e;
+    const t = textArg(ev, args[0]); if (isError(t)) return t;
+    const n = intArg(ev, args[1], 0); if (isError(n)) return n;
+    if (n < 0 || n * t.length > 32767) return new ErrorValue('#VALUE!', 'REPT 的次數不正確');
+    return t.repeat(n);
+  },
+  EXACT(ev, args) {
+    const e = argCount('EXACT', args, 2, 2); if (e) return e;
+    const a = textArg(ev, args[0]); if (isError(a)) return a;
+    const b = textArg(ev, args[1]); if (isError(b)) return b;
+    return a === b;
+  },
+  SUBSTITUTE(ev, args) {
+    const e = argCount('SUBSTITUTE', args, 3, 4); if (e) return e;
+    const t = textArg(ev, args[0]); if (isError(t)) return t;
+    const o = textArg(ev, args[1]); if (isError(o)) return o;
+    const n = textArg(ev, args[2]); if (isError(n)) return n;
+    if (o === '') return t;
+    if (args[3] && args[3].type !== 'empty') {
+      const k = intArg(ev, args[3], 1); if (isError(k)) return k;
+      let idx = -1;
+      for (let i = 0; i < k; i++) { idx = t.indexOf(o, idx + 1); if (idx < 0) return t; }
+      return t.slice(0, idx) + n + t.slice(idx + o.length);
+    }
+    return t.split(o).join(n);
+  },
+  INDEX(ev, args) {
+    const e = argCount('INDEX', args, 2, 3); if (e) return e;
+    const rng = ev.evalNode(args[0]);
+    if (!isRange(rng)) return new ErrorValue('#VALUE!', 'INDEX 第一個參數需要是儲存格範圍');
+    let r = intArg(ev, args[1], 0); if (isError(r)) return r;
+    let c = intArg(ev, args[2], 0); if (isError(c)) return c;
+    if (rng.height === 1 && !args[2]) { c = r; r = 1; }
+    if (!c) c = 1;
+    if (r < 1 || c < 1 || r > rng.height || c > rng.width) return new ErrorValue('#REF!', 'INDEX 的位置超出範圍');
+    return rng.wb.valueAt(rng.sheet, rng.c1 + c - 1, rng.r1 + r - 1);
+  },
+  MATCH(ev, args) {
+    const e = argCount('MATCH', args, 2, 3); if (e) return e;
+    const look = scalar(ev, args[0]); if (isError(look)) return look;
+    const rng = ev.evalNode(args[1]);
+    if (!isRange(rng) || (rng.height > 1 && rng.width > 1)) return new ErrorValue('#N/A', 'MATCH 的查找範圍需要是單一欄或單一列');
+    const type = intArg(ev, args[2], 1); if (isError(type)) return type;
+    const list = rng.values().flat();
+    if (type === 0) {
+      const m = makeCriteria(typeof look === 'string' ? look : look);
+      const i = list.findIndex((v) => (typeof look === 'string' ? m(v) : compare(v, look) === 0));
+      return i < 0 ? new ErrorValue('#N/A', 'MATCH 找不到相符的值') : i + 1;
+    }
+    let pos = -1;
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      if (isBlank(v)) continue;
+      const c = compare(v, look);
+      if (type > 0 ? c <= 0 : c >= 0) pos = i; else break;
+    }
+    return pos < 0 ? new ErrorValue('#N/A', 'MATCH 找不到相符的值') : pos + 1;
+  },
 };
+
+/** COUNTIFS／SUMIFS／AVERAGEIFS／MAXIFS／MINIFS：所有條件範圍大小必須相同 */
+function ifsAggregate(name, ev, args, kind) {
+  const hasTarget = kind !== 'count';
+  const pairsStart = hasTarget ? 1 : 0;
+  if (args.length < pairsStart + 2 || (args.length - pairsStart) % 2 !== 0) return new ErrorValue('#N/A', `${name} 的參數數目不正確（條件範圍與條件需要成對）`);
+  let target = null;
+  if (hasTarget) {
+    target = ev.evalNode(args[0]);
+    if (!isRange(target)) return new ErrorValue('#VALUE!', `${name} 第一個參數需要是儲存格範圍`);
+  }
+  const conds = [];
+  for (let i = pairsStart; i < args.length; i += 2) {
+    const r = ev.evalNode(args[i]);
+    if (!isRange(r)) return new ErrorValue('#VALUE!', `${name} 的條件範圍需要是儲存格範圍`);
+    const m = makeCriteria(scalar(ev, args[i + 1]));
+    if (isError(m)) return m;
+    conds.push({ vals: r.values(), m, h: r.height, w: r.width });
+  }
+  const { h: H, w: W } = conds[0];
+  if (conds.some((c) => c.h !== H || c.w !== W) || (target && (target.height !== H || target.width !== W))) return new ErrorValue('#VALUE!', `${name} 的所有範圍大小必須相同`);
+  const tv = target ? target.values() : null;
+  const hits = [];
+  for (let i = 0; i < H; i++) {
+    for (let j = 0; j < W; j++) {
+      if (conds.every((c) => c.m(c.vals[i][j]))) {
+        if (!tv) hits.push(1);
+        else {
+          const x = tv[i][j];
+          if (isError(x)) return x;
+          if (typeof x === 'number') hits.push(x);
+        }
+      }
+    }
+  }
+  if (kind === 'count') return hits.length;
+  if (kind === 'sum') return hits.reduce((a, b) => a + b, 0);
+  if (kind === 'avg') return hits.length ? hits.reduce((a, b) => a + b, 0) / hits.length : new ErrorValue('#DIV/0!', `${name} 沒有符合條件的數值`);
+  if (kind === 'max') return hits.length ? Math.max(...hits) : 0;
+  return hits.length ? Math.min(...hits) : 0;
+}
 
 /** 函數說明（學生介面的公式提示；繁體中文） */
 export const FUNCTION_HELP = {
@@ -438,6 +574,14 @@ export const FUNCTION_HELP = {
   RANDBETWEEN: ['RANDBETWEEN(下限, 上限)', '兩數之間的隨機整數'], SQRT: ['SQRT(數值)', '平方根'], MOD: ['MOD(數值, 除數)', '餘數'],
   ABS: ['ABS(數值)', '絕對值'], CONCATENATE: ['CONCATENATE(文字1, 文字2, …)', '連接文字（亦可用 &）'], CONCAT: ['CONCAT(文字1, …)', '連接文字'],
   UPPER: ['UPPER(文字)', '轉為大寫'], LOWER: ['LOWER(文字)', '轉為小寫'], TRIM: ['TRIM(文字)', '刪除多餘空格'],
+  COUNTIFS: ['COUNTIFS(條件範圍1, 條件1, [條件範圍2, 條件2], …)', '計算同時符合多個條件的列數'],
+  SUMIFS: ['SUMIFS(總和範圍, 條件範圍1, 條件1, …)', '加總同時符合多個條件的數值'],
+  AVERAGEIFS: ['AVERAGEIFS(平均範圍, 條件範圍1, 條件1, …)', '符合多個條件的平均值'],
+  MAXIFS: ['MAXIFS(最大值範圍, 條件範圍1, 條件1, …)', '符合條件的最大值'], MINIFS: ['MINIFS(最小值範圍, 條件範圍1, 條件1, …)', '符合條件的最小值'],
+  SUBTOTAL: ['SUBTOTAL(功能編號, 範圍)', '只計算篩選後可見的列（3＝COUNTA、9＝SUM、1＝AVERAGE、2＝COUNT、4＝MAX、5＝MIN）'],
+  IFERROR: ['IFERROR(值, 出錯時的值)', '公式出錯時改為傳回指定的值'], REPT: ['REPT(文字, 次數)', '重複文字'],
+  EXACT: ['EXACT(文字1, 文字2)', '兩段文字是否完全相同（分大小寫）'], SUBSTITUTE: ['SUBSTITUTE(文字, 舊文字, 新文字, [第幾個])', '取代文字'],
+  INDEX: ['INDEX(範圍, 列, [欄])', '傳回範圍中指定位置的值'], MATCH: ['MATCH(查找值, 範圍, [類型])', '找出值在範圍中的位置（類型 0＝完全相符）'],
   LARGE: ['LARGE(範圍, k)', '第 k 大的數值'], SMALL: ['SMALL(範圍, k)', '第 k 小的數值'], COUNTBLANK: ['COUNTBLANK(範圍)', '計算空白儲存格數目'],
 };
 
