@@ -1,4 +1,4 @@
-# 《定過抬油：站長爭奪戰》Episode 1《新人報到》・Episode 2《疑犯火箭仔》
+# 《定過抬油：站長爭奪戰》Episode 1《新人報到》・Episode 2《疑犯火箭仔》・Episode 3《暴躁阿叔》
 
 HKDSE ICT 中四試算表團隊競賽網頁應用程式，設計為**免費雲端託管**（Render Free + Neon Free PostgreSQL）：老師及學生在學校電腦用瀏覽器開啟網址即可，不需要安裝軟件或老師電腦一直開著。全班 6 隊（可設 4–7 隊），5 關，45 分鐘。學生在網站內的**內置工作表**輸入公式（每隊只能看到及修改自己的工作表，隊友即時同步），網站負責中文劇情、倒數、提示、提交、**伺服器端公式批改**、計分、排行榜、教師控制及廣東話配音字幕。
 
@@ -30,7 +30,8 @@ npm start
 
 | 功能 | 狀態 |
 |-|-|
-| 兩集各五關題目、Blueprint、繁體中文任務／提示／Feedback | ✅ 已實作（第二集：FIND、XLOOKUP、ROUND、INT、SQRT、RANK、RAND） |
+| 三集各五關題目、Blueprint、繁體中文任務／提示／Feedback | ✅ 已實作（第二集：FIND、XLOOKUP、ROUND、INT、SQRT、RANK、RAND；第三集：排序、篩選、多工作表、圖表、樞紐分析表、假設分析） |
+| 內置工作表的分析工具（排序、篩選、多工作表、圖表、樞紐分析表及樞紐分析圖、分析藍本、目標搜尋） | ✅ 已實作並以瀏覽器及 30 人負載測試 |
 | 內置工作表（公式列、$ 參照、複製／填充、鍵盤操作、受保護格、逐格儲存、隊友即時同步、衝突偵測） | ✅ 已實作並以 30 人負載測試 |
 | 伺服器端隊伍及班別隔離、老師分隊、學生名單 | ✅ 已實作並測試（改網址／參數不能看到其他隊） |
 | 逐題開放／鎖定、重開（練習不計分／補做）、老師題目預覽及即時工作表 | ✅ 已實作並測試 |
@@ -56,10 +57,10 @@ npm start
 | 指令 | 用途 |
 |-|-|
 | `npm start` | 啟動伺服器 |
-| `npm test` | 驗收測試（109 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性及重新啟動可靠性） |
+| `npm test` | 驗收測試（126 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性及重新啟動可靠性） |
 | `npm run test:e2e` | 瀏覽器端到端測試（需要 Playwright + Chromium） |
 | `npm run demo:bots` | 六隊加速課堂模擬及壓力測試 |
-| `npm run load:test` | 30 名學生經 HTTP 使用內置工作表、隨機 Driver 及隊伍對話的課堂負載測試（第二集；`--no-driver` 測舊模式；設定 `DATABASE_URL` 即測 PostgreSQL） |
+| `npm run load:test` | 30 名學生經 HTTP 使用內置工作表、隨機 Driver 及隊伍對話的課堂負載測試（預設第二集；`--episode E3` 測第三集；`--no-driver` 測舊模式；設定 `DATABASE_URL` 即測 PostgreSQL） |
 | `npm run preflight:report -- SEED 6` | 命令列 Preflight 報告 |
 | `npm run google:smoke` | **真實** Google Sheets 端到端測試（需要憑證） |
 | `npm run tts:setup` | 下載本機粵語 TTS 模型（約 110 MB；只在需要重新合成時使用） |

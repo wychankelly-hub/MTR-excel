@@ -20,6 +20,7 @@ server/
   episode1/        blueprint（題目藍圖）、generator（數據生成）、validators（逐題批改）、
                    feedback（中文回饋及賽後回顧）、fixtures（正確／常見錯誤公式）、preflight、dialogue（配音事件）
   episode2/        第二集《疑犯火箭仔》，結構與第一集相同
+  episode3/        第三集《暴躁阿叔》：排序、篩選、多工作表、圖表、樞紐分析表、假設分析
   drivers.js       隨機 Driver：公平輪換、每題指派、伺服器端權限
   chat.js          隊伍對話（只限同隊及老師）
   presence.js      學生即時連線狀態（記憶體）
@@ -118,5 +119,14 @@ test/              驗收測試（a–g）及瀏覽器 E2E
 - API：`GET/POST /api/chat`（隊伍由登入身份決定）、`GET /api/teacher/competitions/:id/chat?teamId=`、`POST …/chat/:msgId/delete`、`POST …/drivers`（重新指派）。
 - 防洗版及重試：每人／每隊頻率限制、300 字上限、`clientId` 令網絡重試不會重複加入。
 
-## 擴展到 Episode 3
+## 分析工具（第三集）：排序、篩選、多工作表、圖表、樞紐分析表、假設分析
+- **共用程式** `server/engine/analysis.js`（瀏覽器經 `/engine/analysis.js` 使用同一份）：`applySorts`（由原始數據重做排序紀錄；穩定排序，所以逐次排序＝多欄排序；`cols` 表示只排序部分欄，用來重現「資料列被拆散」的常見錯誤）、`filterHiddenRows`（AND 條件；只隱藏不刪除）、`computePivot`（列／欄／值／篩選；SUM、COUNT、AVERAGE、MAX、MIN）、`chartData`（工作表範圍或樞紐分析表）、`scenarioSummary`、`goalSeek`（連續值及整數階梯函數）、`sanitizeMeta`（伺服器檢查學生的設定）、`loadLevelIntoWorkbook`。
+- **存儲**：設定以中繼資料鍵（`!SORT`、`!FILTER`、`!CHARTS`、`!PIVOTS`、`!SCEN`）存於該隊主要工作表的儲存格表（`ty_cells`，JSONB），因此自動擁有版本號（衝突偵測）、Driver 權限、練習副本、即時同步、資料庫持久化及重新啟動恢復；不需要新增資料表。每次修改只寫入一行。
+- **權限**：題目以 `task.meta` 擁有設定鍵；`editRulesFor` 與作答格同樣處理（未開放、已完成、非 Driver 都不可修改）。
+- **多工作表**：關卡可有 `extraSheets`（唯讀的數據工作表）；跨工作表參照 `Sheet!A1` 由原有引擎支援；`SUBTOTAL` 讀取工作簿的 `hiddenRows`（篩選）。
+- **新函數**：COUNTIFS、SUMIFS、AVERAGEIFS、MAXIFS、MINIFS、SUBTOTAL、IFERROR、REPT、EXACT、SUBSTITUTE、INDEX、MATCH。公式解析結果有快取（批改重建工作簿時不重複解析）。
+- **批改**（`server/episode3/validators.js`）：檢查實際狀態（排序後資料列完整及次序、可見列、圖表範圍／類型／標題／圖例、樞紐分析結果〔接受等價設定，例如 COUNT 任何沒有空白的欄位、轉置〕、藍本數值），並把學生的設定套用到隱藏測試數據；What-if 公式以多個假設值（包括邊界值）重算。
+- **編輯器**：`public/js/sheet-tools.js`（工具列、篩選按鈕、對話框、分析面板、SVG 圖表，不需要外部圖表庫）。
+
+## 新增劇集
 新增 `server/episodeN/`（blueprint、generator、validators、fixtures、feedback、dialogue、preflight），並在 `server/episodes/index.js` 登記；比賽記錄 `episode` 欄位決定使用哪一集（舊比賽沒有此欄位時視為 E1）。計分、登入、工作表、提交流程不需改寫。
