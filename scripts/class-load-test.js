@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { cookieJar } from '../test/cookie-jar.js';
+import { expandRange } from '../server/engine/refs.js';
 
 const arg = (k, d) => (process.argv.includes(k) ? Number(process.argv[process.argv.indexOf(k) + 1]) : d);
 const STUDENTS = arg('--students', 30);
@@ -24,8 +25,15 @@ process.env.DEMO_TEACHER_PIN ||= '2468';
 
 const { startServer } = await import('../server/index.js');
 const { storageInfo } = await import('../server/store.js');
-const { LEVELS } = await import('../server/episode2/blueprint.js');
-const { correctInputs, wrongCases } = await import('../server/episode2/fixtures.js');
+// --episode E3：第三集（排序、篩選、多工作表、圖表、樞紐分析表、藍本）；預設第二集
+const EPISODE = process.argv.includes('--episode') ? process.argv[process.argv.indexOf('--episode') + 1] : 'E2';
+const EP_DIR = { E2: 'episode2', E3: 'episode3' }[EPISODE];
+const { LEVELS } = await import(`../server/${EP_DIR}/blueprint.js`);
+const fixtures = await import(`../server/${EP_DIR}/fixtures.js`);
+const { wrongCases } = fixtures;
+let dsOf = () => null; // teamId -> dataset（第三集部分答案按數據計算）
+const correctInputs = (taskId, teamId) => fixtures.correctInputs(taskId, teamId ? dsOf(teamId) : null);
+const show = (v) => (v && typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : v);
 const C = await import('../server/competition.js');
 const store = await import('../server/store.js');
 
@@ -87,7 +95,7 @@ function openStream(jarHeader, onEvent) {
 
 const T = agent('teacher');
 await T('POST', '/auth/demo', { role: 'teacher', pin: process.env.DEMO_TEACHER_PIN });
-const id = (await T('POST', '/teacher/competitions', { episode: 'E2', teamCount: TEAMS, classCode: 'LOAD', teamSelection: 'teacher', randomDriver: DRIVER })).body.id;
+const id = (await T('POST', '/teacher/competitions', { episode: EPISODE, teamCount: TEAMS, classCode: 'LOAD', teamSelection: 'teacher', randomDriver: DRIVER })).body.id;
 const tp = (p, b) => T('POST', `/teacher/competitions/${id}${p}`, b);
 let t0 = Date.now();
 await tp('/generate', {});
@@ -106,6 +114,7 @@ const students = await Promise.all(Array.from({ length: STUDENTS }, async (_, i)
 }));
 await tp('/auto-assign');
 const comp = store.db.state.competitions[id];
+dsOf = (teamId) => C.getDataset(comp, comp.teams.find((t) => t.id === teamId));
 const byTeam = Object.fromEntries(comp.teams.map((t) => [t.id, []]));
 for (const st of students) {
   const s = (await st.S('GET', '/student/state')).body;
@@ -147,11 +156,11 @@ async function driverTask(teamId, members, lv, task, ds) {
   const drv = members.find((m) => m.uid === st.driver.driver?.id);
   if (!drv) { errors.push(`${teamId} ${task.id}：沒有 Driver`); return; }
   const others = members.filter((m) => m !== drv);
-  const sample = Object.entries(correctInputs(task.id))[0];
+  const sample = Object.entries(correctInputs(task.id, teamId))[0];
   // 隊友：在對話提出公式；其中一人嘗試直接修改（必須被拒絕）
   await Promise.all(others.map(async (m, k) => {
     await sleep(900 + Math.random() * 700); // 學生閱讀題目、輸入訊息需要時間（亦低於每人的發送頻率限制）
-    const r = await m.S('POST', '/chat', { text: `${task.id} 試試 ${sample[1]}（${k}）`, taskId: task.id, clientId: `ld-${m.i}-${task.id}` }, 'chat');
+    const r = await m.S('POST', '/chat', { text: `${task.id} 試試 ${show(sample[1])}（${k}）`, taskId: task.id, clientId: `ld-${m.i}-${task.id}` }, 'chat');
     if (r.status === 429) rateLimited += 1; // 防洗版限制（機械人遠比真實學生快）
     else if (r.status !== 200) errors.push(`對話失敗 ${r.status} ${r.body?.error}`);
     else chatSent += 1;
@@ -166,11 +175,14 @@ async function driverTask(teamId, members, lv, task, ds) {
   // Driver：第一題先輸入常見錯誤並提交，再更正
   const wc = task === lv.tasks[0] ? wrongCases(task.id, ds)[0] : null;
   if (wc) {
-    await writeCells(drv.S, lv.sheet, wc.inputs);
+    const ownW = new Set([...task.cells.flatMap(expandRange), ...(task.meta || [])]);
+    await writeCells(drv.S, lv.sheet, Object.fromEntries(Object.entries(wc.inputs).filter(([a]) => ownW.has(a))));
     const w = await drv.S('POST', '/student/submit', { taskId: task.id, idempotencyKey: key() }, 'submit');
     if (w.body?.status === 'VERIFIED' && w.body.earned === task.points) errors.push(`${teamId} ${task.id}：錯誤答案得到滿分`);
   }
-  await writeCells(drv.S, lv.sheet, correctInputs(task.id));
+  // 只送出本題擁有的作答格及分析設定（之前題目的設定已鎖定）
+  const own = new Set([...task.cells.flatMap(expandRange), ...(task.meta || [])]);
+  await writeCells(drv.S, lv.sheet, Object.fromEntries(Object.entries(correctInputs(task.id, teamId)).filter(([a]) => own.has(a))));
   const kk = key();
   const [a, b] = await Promise.all([drv.S('POST', '/student/submit', { taskId: task.id, idempotencyKey: kk }, 'submit'), drv.S('POST', '/student/submit', { taskId: task.id, idempotencyKey: kk }, 'submit')]);
   if (a.body?.status !== 'VERIFIED') errors.push(`${teamId} ${task.id}：${a.body?.status} ${JSON.stringify(a.body?.errors?.slice(0, 2) || a.body?.error)}`);
@@ -229,18 +241,22 @@ const before = JSON.stringify(view.scores.map((s) => [s.teamId, s.total]));
 for (const [teamId, members] of Object.entries(byTeam)) {
   for (const lv of LEVELS) {
     const p = (await members[0].S('GET', `/sheet/${lv.sheet}`)).body;
-    for (const t of lv.tasks) for (const [a, i] of Object.entries(correctInputs(t.id))) {
-      if (p.cells[a]?.i !== i) { errors.push(`${teamId} ${lv.sheet}!${a} 應為 ${i}，實際 ${p.cells[a]?.i}`); break; }
+    // 後面題目的分析設定（例如第二次排序）會取代前面的設定：比較最後的狀態
+    const final = Object.assign({}, ...lv.tasks.map((t) => correctInputs(t.id, teamId)));
+    for (const [a, i] of Object.entries(final)) {
+      const norm = (x) => JSON.stringify(x ?? null, (k, val) => (k === 'source' && typeof val === 'string' ? undefined : val));
+      if (norm(p.cells[a]?.i) !== norm(i)) { errors.push(`${teamId} ${lv.sheet}!${a} 應為 ${show(i)}，實際 ${show(p.cells[a]?.i)}`); break; }
     }
   }
 }
 
 // 練習（重開）：不改變分數
-const ro = (await tp('/reopen', { taskId: 'E2-L1-T1', teamIds: 'all', mode: 'practice' })).body;
+const FIRST = LEVELS[0].tasks[0].id;
+const ro = (await tp('/reopen', { taskId: FIRST, teamIds: 'all', mode: 'practice' })).body;
 const rid = ro.id || ro.reopen?.id || store.db.state.competitions[id].reopens.at(-1).id;
-await Promise.all(Object.values(byTeam).map(async (members) => {
+await Promise.all(Object.entries(byTeam).map(async ([teamId, members]) => {
   const S = members[0].S;
-  const ops = Object.entries(correctInputs('E2-L1-T1')).map(([a, i]) => ({ a, i, base: 0 }));
+  const ops = Object.entries(correctInputs(FIRST, teamId)).map(([a, i]) => ({ a, i, base: 0 }));
   const p = (await S('GET', `/practice/${id}/${rid}/sheet`)).body;
   for (const o of ops) o.base = p.cells[o.a]?.v ?? 0;
   await S('POST', `/practice/${id}/${rid}/ops`, { ops }, 'edit');
