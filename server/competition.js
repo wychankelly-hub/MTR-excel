@@ -106,7 +106,8 @@ export function editRulesFor(comp, team, level, layer = MAIN, user = null) {
   const ep = episodeOf(comp);
   const lv = ep.levelByNum[level];
   const editable = new Set();
-  const answer = new Set(lv.editable.flatMap(expandRange));
+  // 作答格＋該關題目的分析設定（排序、篩選、圖表、樞紐分析表、藍本；以 '!' 開頭）
+  const answer = new Set([...lv.editable.flatMap(expandRange), ...lv.tasks.flatMap((x) => x.meta || [])]);
   const tasks = [];
   const notDriver = new Set();
   const drivers = driverMode(comp) ? (comp.drivers?.[team.id] || { current: null }) : null;
@@ -130,9 +131,10 @@ export function editRulesFor(comp, team, level, layer = MAIN, user = null) {
     if (open && !layerReopen && drivers && user) {
       if (t.id !== drivers.current || driverOf(comp, team, t.id) !== user.id) { open = false; driverBlocked = true; }
     }
-    if (open) for (const a of t.cells.flatMap(expandRange)) editable.add(a);
-    if (driverBlocked) for (const a of t.cells.flatMap(expandRange)) notDriver.add(a);
-    tasks.push({ id: t.id, cells: t.cells, bonus: !!t.bonus, state: layerReopen ? (layerReopen.taskId === t.id ? (layerReopen.closedAt ? 'closed' : 'practice') : 'locked') : st.reopen ? 'reopened' : st.state, editable: open });
+    const owned = [...t.cells.flatMap(expandRange), ...(t.meta || [])];
+    if (open) for (const a of owned) editable.add(a);
+    if (driverBlocked) for (const a of owned) notDriver.add(a);
+    tasks.push({ id: t.id, cells: t.cells, meta: t.meta || [], bonus: !!t.bonus, state: layerReopen ? (layerReopen.taskId === t.id ? (layerReopen.closedAt ? 'closed' : 'practice') : 'locked') : st.reopen ? 'reopened' : st.state, editable: open });
   }
   return {
     editable,

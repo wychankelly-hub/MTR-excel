@@ -13,6 +13,7 @@ import { HttpError } from './auth.js';
 import { clock } from './clock.js';
 import { bus } from './bus.js';
 import { startSheetLines } from './adapters/start-sheet.js';
+import { isMetaKey, sanitizeMeta, loadLevelIntoWorkbook } from './engine/analysis.js';
 
 export const MAIN = 'main';
 
@@ -25,8 +26,19 @@ export function configureSheets({ episode, dataset, rules }) {
   editRules = rules;
 }
 
-const levelOfSheet = (comp, sheet) => episodeOf(comp).levels.find((l) => l.sheet === sheet) || null;
+// 一關可以有多張工作表：主要工作表（作答）＋額外的數據工作表（第三集，唯讀，可被跨工作表參照）
+const levelOfSheet = (comp, sheet) => episodeOf(comp).levels.find((l) => l.sheet === sheet || l.extraSheets?.some((x) => x.sheet === sheet)) || null;
 export const levelForSheet = levelOfSheet;
+const extraOf = (lv, sheet) => lv.extraSheets?.find((x) => x.sheet === sheet) || null;
+
+/** 主要工作表的中繼資料（排序、篩選、圖表、樞紐分析表、藍本） */
+export function metaOf(book) {
+  const out = {};
+  for (const [a, e] of Object.entries(book || {})) if (isMetaKey(a) && e && e.i !== null && e.i !== undefined) out[a] = e.i;
+  return out;
+}
+
+export { loadLevelIntoWorkbook };
 
 /** 儲存格表中的工作表鍵：正式作答 = 工作表名稱；練習副本 = 名稱@練習編號 */
 export function sheetKey(sheet, layer) {
@@ -87,11 +99,11 @@ export function workbookFor(comp, team, layer = MAIN) {
   const st = wb.addSheet('START', 30, 2);
   startSheetLines(comp, team).forEach((line, i) => st.cells.set(`A${i + 1}`, { input: line }));
   for (const lv of ep.levels) {
-    wb.addSheet(lv.sheet, lv.maxRow, lv.maxCol);
-    for (const [a, v] of Object.entries(ds.levels[lv.level].data)) wb.setInput(lv.sheet, a, v);
     const useLayer = layer !== MAIN && cellBook(comp.id, team.id, sheetKey(lv.sheet, layer), false) ? layer : MAIN;
     const book = bookFor(comp, team, lv, useLayer);
-    for (const [a, e] of Object.entries(book)) if (e && e.i !== null && e.i !== undefined) wb.setInput(lv.sheet, a, e.i);
+    const inputs = {};
+    for (const [a, e] of Object.entries(book)) if (e && e.i !== null && e.i !== undefined && !isMetaKey(a)) inputs[a] = e.i;
+    loadLevelIntoWorkbook(wb, lv, ds.levels[lv.level], inputs, metaOf(book));
   }
   wbCache.set(k, wb);
   return wb;
@@ -120,6 +132,8 @@ export function applyOps(comp, team, user, sheet, layer, ops, { force = false } 
   const lv = levelOfSheet(comp, sheet);
   if (!lv) throw new HttpError(404, '沒有此工作表，或此工作表不可編輯。', 'NO_SHEET');
   if (!Array.isArray(ops) || !ops.length) return { applied: [], conflicts: [], rejected: [] };
+  // 額外的數據工作表一律唯讀（保護原始數據）
+  if (sheet !== lv.sheet) return { applied: [], conflicts: [], rejected: ops.map((o) => ({ a: String(o?.a || ''), code: 'PROTECTED' })) };
   if (ops.length > 1200) throw new HttpError(413, '一次修改太多儲存格。');
   const rules = editRules(comp, team, lv.level, layer || MAIN, user);
   const key = sheetKey(sheet, layer);
@@ -129,8 +143,27 @@ export function applyOps(comp, team, user, sheet, layer, ops, { force = false } 
   const conflicts = [];
   const rejected = [];
   const now = clock.now();
+  let metaChanged = false;
   for (const op of ops) {
     const A = String(op?.a || '').toUpperCase();
+    if (isMetaKey(A)) {
+      // 分析設定（排序／篩選／圖表／樞紐分析表／藍本）：與儲存格相同的版本及權限檢查
+      if (!rules.editable.has(A)) { rejected.push({ a: A, code: rules.reasonFor(A) }); continue; }
+      let value;
+      try { value = sanitizeMeta(A, op.i, lv.tools || {}); } catch (e) { rejected.push({ a: A, code: 'BAD_META', message: e.message }); continue; }
+      const cur = book[A];
+      const curVer = cur?.v ?? 0;
+      if (!force && op.base !== undefined && op.base !== null && Number(op.base) !== curVer) {
+        conflicts.push({ a: A, i: cur?.i ?? null, v: curVer, by: cur?.by || null, byName: nameOf(cur?.by) });
+        continue;
+      }
+      if (JSON.stringify(cur?.i ?? null) === JSON.stringify(value)) { applied.push({ a: A, i: value, v: curVer, by: cur?.by || null }); continue; }
+      const entry = { i: value, v: curVer + 1, by: user?.id || 'system', at: now };
+      putCell(comp.id, team.id, key, A, entry);
+      applied.push({ a: A, i: value, v: entry.v, by: entry.by, changed: true });
+      metaChanged = true;
+      continue;
+    }
     if (!/^[A-Z]{1,3}[1-9][0-9]{0,4}$/.test(A)) { rejected.push({ a: A, code: 'BAD_ADDR' }); continue; }
     if (!rules.editable.has(A)) { rejected.push({ a: A, code: rules.reasonFor(A) }); continue; }
     let input = normalizeInput(op.i);
@@ -149,6 +182,9 @@ export function applyOps(comp, team, user, sheet, layer, ops, { force = false } 
     wb.setInput(sheet, A, input);
     applied.push({ a: A, i: input, v: entry.v, by: entry.by, changed: true });
   }
+  // 排序／篩選改變工作簿的數據排列：下次使用時重新建立
+  if (metaChanged) wbCache.delete(cacheKey(comp, team, layer));
+  else if (lv.tools?.filter && applied.some((x) => x.changed)) wbCache.delete(cacheKey(comp, team, layer));
   return { applied, conflicts, rejected };
 }
 
@@ -216,14 +252,26 @@ export function sheetPayload(comp, team, sheet, layer = MAIN, { viewer = null } 
   const rules = editRules(comp, team, lv.level, layer || MAIN, viewer);
   const cells = {};
   for (const [a, e] of Object.entries(book)) if (e) cells[a] = { i: e.i ?? null, v: e.v, by: e.by || null };
+  // 同一關的其他工作表（跨工作表參照需要）
+  const level = { sheet: lv.sheet, maxRow: lv.maxRow, maxCol: lv.maxCol, tools: lv.tools || null, extraSheets: lv.extraSheets || [], data: ds.levels[lv.level].data, extra: ds.levels[lv.level].extra || {} };
+  const extra = extraOf(lv, sheet);
+  if (extra) {
+    return {
+      sheet, layer: layer || MAIN, level: lv.level, title: extra.title || lv.title, linkedTo: lv.sheet,
+      maxRow: extra.maxRow, maxCol: extra.maxCol, data: level.extra[sheet] || {}, cells: {}, primaryCells: cells,
+      answer: [], editable: [], tasks: rules.tasks, levelInfo: level, readOnlyData: true,
+      people: Object.fromEntries(team.memberIds.map((id) => [id, nameOf(id)])),
+    };
+  }
   return {
     sheet, layer: layer || MAIN, level: lv.level, title: lv.title,
     maxRow: lv.maxRow, maxCol: lv.maxCol,
-    data: ds.levels[lv.level].data,
+    data: ds.levels[lv.level].data, // 原始次序；瀏覽器按 '!SORT' 重排（與伺服器相同）
     cells,
     answer: lv.editable,
     editable: [...rules.editable],
     tasks: rules.tasks,
+    levelInfo: level,
     people: Object.fromEntries(team.memberIds.map((id) => [id, nameOf(id)])),
   };
 }
@@ -258,6 +306,11 @@ export function readLevelSnapshot(comp, team, levelNum, layer = MAIN) {
   const cells = {};
   const addrs = new Set([...sh.cells.keys(), ...lv.editable.flatMap(expandRange)]);
   for (const a of addrs) cells[a] = { input: wb.getInput(lv.sheet, a), value: serializeValue(wb.getValue(lv.sheet, a)) };
+  // 分析設定（排序、篩選、圖表、樞紐分析表、藍本）亦是作答的一部分
+  if (lv.tools) {
+    const useLayer = layer !== MAIN && cellBook(comp.id, team.id, sheetKey(lv.sheet, layer), false) ? layer : MAIN;
+    for (const [a, v] of Object.entries(metaOf(bookFor(comp, team, lv, useLayer)))) cells[a] = { input: v, value: null };
+  }
   return { provider: 'builtin', readAt: Date.now(), layer: layer || MAIN, cells };
 }
 

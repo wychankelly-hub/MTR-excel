@@ -284,6 +284,28 @@ export function goalSeek(wb, sheet, target, goal, changing, { lo = 0, hi = 1000,
   }
 }
 
+// ---------------------------------------------------------------- 工作簿
+/**
+ * 把一關的所有工作表放入工作簿：原始數據（按排序紀錄重排）、額外工作表、學生作答，並按篩選設定隱藏列。
+ * 伺服器（學生工作簿、批改）及瀏覽器使用相同的規則。
+ */
+export function loadLevelIntoWorkbook(wb, lv, levelData, inputs, meta = {}) {
+  wb.addSheet(lv.sheet, lv.maxRow, lv.maxCol);
+  const table = lv.tools?.table;
+  const data = table ? applySorts(levelData.data, table, meta[META.SORT]) : levelData.data;
+  for (const [a, v] of Object.entries(data)) wb.setInput(lv.sheet, a, v);
+  for (const x of lv.extraSheets || []) {
+    wb.addSheet(x.sheet, x.maxRow, x.maxCol);
+    for (const [a, v] of Object.entries(levelData.extra?.[x.sheet] || {})) wb.setInput(x.sheet, a, v);
+  }
+  for (const [a, i] of Object.entries(inputs || {})) if (!isMetaKey(a) && i !== null && i !== undefined && !(a in data)) wb.setInput(lv.sheet, a, i);
+  if (table && meta[META.FILTER]) {
+    wb.hiddenRows ??= new Map();
+    wb.hiddenRows.set(lv.sheet, filterHiddenRows((c, r) => wb.valueAt(lv.sheet, c, r), table, meta[META.FILTER]));
+  } else wb.hiddenRows?.delete(lv.sheet);
+  return wb;
+}
+
 // ---------------------------------------------------------------- 驗證（伺服器接收學生設定時）
 const cleanText = (s, n = 60) => String(s ?? '').replace(/[\u0000-\u001F]/g, '').slice(0, n);
 const COL = /^[A-Z]{1,3}$/;

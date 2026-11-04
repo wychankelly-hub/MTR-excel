@@ -133,8 +133,9 @@ export async function submitTask(comp, user, { taskId, idempotencyKey }) {
 
     const dataset = getDataset(comp, team);
     const lv = ep.levelByNum[task.level];
-    const taskCells = task.cells.flatMap(expandRange);
-    const editableCells = lv.editable.flatMap(expandRange);
+    // 作答格＋分析設定（第三集：排序、篩選、圖表、樞紐分析表、藍本）
+    const taskCells = [...task.cells.flatMap(expandRange), ...(task.meta || [])];
+    const editableCells = [...new Set([...lv.editable.flatMap(expandRange), ...lv.tasks.flatMap((t) => t.meta || [])])];
     const inputs = Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.input ?? null]));
     sub.snapshot = {
       provider: snap.provider,
@@ -264,8 +265,8 @@ export async function submitPractice(comp, user, { reopenId, idempotencyKey }) {
     const snap = readLevelSnapshot(comp, team, task.level, reopen.id);
     const dataset = getDataset(comp, team);
     const lv = ep.levelByNum[task.level];
-    const taskCells = task.cells.flatMap(expandRange);
-    const editableCells = lv.editable.flatMap(expandRange);
+    const taskCells = [...task.cells.flatMap(expandRange), ...(task.meta || [])];
+    const editableCells = [...new Set([...lv.editable.flatMap(expandRange), ...lv.tasks.flatMap((t) => t.meta || [])])];
     const inputs = Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.input ?? null]));
     sub.snapshot = { provider: 'builtin', readAt: snap.readAt, layer: reopen.id, inputs, values: Object.fromEntries(editableCells.map((a) => [a, snap.cells[a]?.value ?? null])), dataChecksum: dataset.checksums[task.level] };
     sub.snapshotHash = checksum({ task: task.id, inputs: Object.fromEntries(taskCells.map((a) => [a, inputs[a]])) });
