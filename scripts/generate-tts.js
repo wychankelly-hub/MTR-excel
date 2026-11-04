@@ -32,6 +32,8 @@ const VOICES = {
     bat: { voice: 'zh-HK-HiuGaaiNeural', rate: '+4%', pitch: '+8%' },
     uncle: { voice: 'zh-HK-WanLungNeural', rate: '+10%', pitch: '-18%' },
     passenger: { voice: 'zh-HK-HiuMaanNeural', rate: '0%', pitch: '0%' },
+    grumpy: { voice: 'zh-HK-WanLungNeural', rate: '+18%', pitch: '-14%' },
+    cat: { voice: 'zh-HK-HiuGaaiNeural', rate: '+10%', pitch: '+30%' },
   },
   google: {
     chanding: { name: 'yue-HK-Standard-B', speakingRate: 0.92, pitch: -1 },
@@ -40,6 +42,8 @@ const VOICES = {
     bat: { name: 'yue-HK-Standard-A', speakingRate: 1.02, pitch: 3 },
     uncle: { name: 'yue-HK-Standard-D', speakingRate: 1.08, pitch: -6 },
     passenger: { name: 'yue-HK-Standard-C', speakingRate: 1.0, pitch: 0 },
+    grumpy: { name: 'yue-HK-Standard-D', speakingRate: 1.15, pitch: -5 },
+    cat: { name: 'yue-HK-Standard-A', speakingRate: 1.1, pitch: 6 },
   },
 };
 

@@ -1,4 +1,4 @@
-// 原創角色插圖（SVG）：陳定、火箭仔、肥站長、八仔，另有喂喂叔、乘客甲。
+// 原創角色插圖（SVG）：陳定、火箭仔、肥站長、八仔，另有喂喂叔、乘客甲；第三集新增暴躁阿叔及肥站長的貓咪咪。
 // 表情：neutral（平常）、happy（開心）、worried（擔心）、surprised（驚訝）、think（思考）
 // 說話時嘴巴開合（可按音量做口型同步）；眼睛會定時眨眼。
 const SKIN = '#F7D4B8';
@@ -11,6 +11,8 @@ export const CHARACTERS = {
   bat: { name: '八仔', role: '提示小助手', color: '#7D5CE0' },
   uncle: { name: '喂喂叔', role: '乘客', color: '#8E44AD' },
   passenger: { name: '乘客甲', role: '乘客', color: '#6C7A86' },
+  grumpy: { name: '暴躁阿叔', role: '乘客', color: '#6D4C41' },
+  cat: { name: '咪咪', role: '站長的貓', color: '#F39C12' },
 };
 
 // ---------------------------------------------------------------- 臉部零件
@@ -126,6 +128,44 @@ const DRAW = {
       <path d="M52 104 Q50 58 100 56 Q150 58 148 104 Q132 76 100 76 Q68 76 52 104 Z" fill="#3B2A20" stroke="${INK}" stroke-width="3"/>
       ${brows(e === 'neutral' ? 'worried' : e, 80, 120, 90)}${eyes(e, 80, 120, 106, 5)}
       ${mouth(e === 'neutral' ? 'worried' : e, 100, 134, 16)}`;
+  },
+  // 暴躁阿叔：灰白平頭、粗眉、皺眉、拿着投訴信
+  grumpy(e) {
+    const ex = e === 'neutral' ? 'worried' : e;
+    return `
+      <path d="M34 240 Q38 174 100 168 Q162 174 166 240 Z" fill="#6D4C41" stroke="${INK}" stroke-width="3"/>
+      <path d="M84 170 L100 192 L116 170" fill="#EFE6D8" stroke="${INK}" stroke-width="2.5"/>
+      <rect x="132" y="186" width="34" height="42" rx="3" fill="#fff" stroke="${INK}" stroke-width="2.5" transform="rotate(8 149 207)"/>
+      <path d="M138 198 l20 3 M137 206 l20 3 M136 214 l14 2" stroke="#C0392B" stroke-width="2.5" transform="rotate(8 149 207)"/>
+      <rect x="88" y="148" width="24" height="24" fill="${SKIN}" stroke="${INK}" stroke-width="3"/>
+      <ellipse cx="100" cy="106" rx="52" ry="54" fill="${SKIN}" stroke="${INK}" stroke-width="3"/>
+      <path d="M50 92 Q52 54 100 52 Q148 54 150 92 Q140 70 100 68 Q60 70 50 92 Z" fill="#B8B8B8" stroke="${INK}" stroke-width="3"/>
+      <path d="M66 82 L94 90 M106 90 L134 82" stroke="${INK}" stroke-width="7" stroke-linecap="round"/>
+      <path d="M92 70 L96 80 M104 70 L100 80" stroke="${INK}" stroke-width="2" opacity=".5"/>
+      ${eyes(ex === 'worried' ? 'neutral' : ex, 80, 120, 104, 5)}
+      <path d="M70 128 Q100 118 130 128" fill="none" stroke="${INK}" stroke-width="2" opacity=".35"/>
+      ${mouth(ex, 100, 138, 22)}
+      ${e === 'surprised' || e === 'worried' || e === 'neutral' ? '<path d="M154 70 l10 -10 M160 80 l14 -4 M150 60 l4 -14" stroke="#C0392B" stroke-width="4" stroke-linecap="round"/>' : ''}`;
+  },
+  // 咪咪：肥站長的橙色貓，戴車站小領巾
+  cat(e) {
+    const happy = e === 'happy';
+    return `
+      <path d="M150 210 Q190 190 176 150 Q172 140 164 146 Q176 178 140 196" fill="#F0A35E" stroke="${INK}" stroke-width="3"/>
+      <ellipse cx="100" cy="196" rx="56" ry="42" fill="#F0A35E" stroke="${INK}" stroke-width="3"/>
+      <path d="M70 190 q8 -6 16 0 M110 196 q8 -6 16 0" stroke="#C8742E" stroke-width="4" fill="none"/>
+      <ellipse cx="80" cy="232" rx="14" ry="8" fill="#FFF3E6" stroke="${INK}" stroke-width="2.5"/><ellipse cx="120" cy="232" rx="14" ry="8" fill="#FFF3E6" stroke="${INK}" stroke-width="2.5"/>
+      <path d="M58 76 L64 30 L92 62 Z M142 76 L136 30 L108 62 Z" fill="#F0A35E" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M66 62 L68 42 L82 58 Z M134 62 L132 42 L118 58 Z" fill="#F7B8B8"/>
+      <ellipse cx="100" cy="110" rx="56" ry="50" fill="#F0A35E" stroke="${INK}" stroke-width="3"/>
+      <path d="M90 64 l4 16 M100 62 l0 18 M110 64 l-4 16" stroke="#C8742E" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="100" cy="128" rx="26" ry="18" fill="#FFF3E6"/>
+      ${happy ? eyes('happy', 78, 122, 104) : `<g class="eyes blink"><ellipse cx="78" cy="104" rx="8" ry="10" fill="#7CC36E" stroke="${INK}" stroke-width="2.5"/><ellipse cx="122" cy="104" rx="8" ry="10" fill="#7CC36E" stroke="${INK}" stroke-width="2.5"/><ellipse cx="78" cy="105" rx="2.5" ry="7" fill="${INK}"/><ellipse cx="122" cy="105" rx="2.5" ry="7" fill="${INK}"/></g>`}
+      <path d="M95 120 L105 120 L100 126 Z" fill="#E86A6A" stroke="${INK}" stroke-width="2"/>
+      <path d="M100 126 Q94 134 88 130 M100 126 Q106 134 112 130" fill="none" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M70 124 L40 118 M70 130 L42 134 M130 124 L160 118 M130 130 L158 134" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>
+      <g class="mouth-open"><ellipse cx="100" cy="134" rx="7" ry="5" fill="#8C2B2B" stroke="${INK}" stroke-width="2"/></g><g class="mouth-closed"></g>
+      <path d="M62 150 Q100 170 138 150 L134 160 Q100 178 66 160 Z" fill="#C0392B" stroke="${INK}" stroke-width="2.5"/>`;
   },
 };
 

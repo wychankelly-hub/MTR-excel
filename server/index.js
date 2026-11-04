@@ -241,7 +241,7 @@ export function createApp() {
   });
 
   // ------------------------------------------------------------ 角色圖片（雲端資產庫；缺少時前端使用內建 SVG）
-  const CHAR_IDS = ['chanding', 'rocket', 'fatmaster', 'bat', 'uncle', 'passenger'];
+  const CHAR_IDS = ['chanding', 'rocket', 'fatmaster', 'bat', 'uncle', 'passenger', 'grumpy', 'cat'];
   const CHAR_EXPRS = ['neutral', 'talk', 'blink', 'happy', 'worried', 'surprised', 'think'];
   const IMG_TYPES = { 'image/png': 'png', 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/gif': 'gif' };
   api.get('/characters', (req, res) => {

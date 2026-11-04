@@ -418,5 +418,236 @@
     "text": "仲有一分鐘！檢查清楚啲線索先好提交！",
     "file": "E2_TIMER_WARNING_01.mp3",
     "generatedAt": "2026-10-29T07:22:15.489Z"
+  },
+  "E3_INTRO_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "你哋個車站啲紀錄亂晒龍！我投訴咗成十次啦！",
+    "file": "E3_INTRO_01.mp3",
+    "generatedAt": "2026-11-04T02:06:27.944Z"
+  },
+  "E3_INTRO_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "阿叔，你成日嚟投訴，啲紀錄會唔會係你改㗎？",
+    "file": "E3_INTRO_02.mp3",
+    "generatedAt": "2026-11-04T02:06:29.209Z"
+  },
+  "E3_INTRO_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "吓？我連你部電腦點開都唔知呀！",
+    "file": "E3_INTRO_03.mp3",
+    "generatedAt": "2026-11-04T02:06:30.026Z"
+  },
+  "E3_INTRO_04": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "唔好亂估。今次我哋用數據，由頭查到尾。",
+    "file": "E3_INTRO_04.mp3",
+    "generatedAt": "2026-11-04T02:06:31.150Z"
+  },
+  "E3_L1_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "一百二十宗投訴，邊宗最緊要？",
+    "file": "E3_L1_OPEN_01.mp3",
+    "generatedAt": "2026-11-04T02:06:32.146Z"
+  },
+  "E3_L1_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "排序同篩選可以幫你搵出重點，不過記住整行資料要一齊移動。",
+    "file": "E3_L1_OPEN_02.mp3",
+    "generatedAt": "2026-11-04T02:06:34.013Z"
+  },
+  "E3_L1_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "有隊伍已經整理好阿叔嘅投訴！",
+    "file": "E3_L1_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-11-04T02:06:34.884Z"
+  },
+  "E3_L1_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "睇到未？我投訴嘅全部都係數據錯誤！",
+    "file": "E3_L1_CLOSE_01.mp3",
+    "generatedAt": "2026-11-04T02:06:35.859Z"
+  },
+  "E3_L1_CLOSE_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "佢唔係搞事，佢係最早發現問題嘅人。",
+    "file": "E3_L1_CLOSE_02.mp3",
+    "generatedAt": "2026-11-04T02:06:37.045Z"
+  },
+  "E3_L2_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "時間表同行車紀錄點解對唔上？",
+    "file": "E3_L2_OPEN_01.mp3",
+    "generatedAt": "2026-11-04T02:06:38.061Z"
+  },
+  "E3_L2_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "我記得有幾班車明明開咗，但係紀錄冇咗！",
+    "file": "E3_L2_OPEN_02.mp3",
+    "generatedAt": "2026-11-04T02:06:39.341Z"
+  },
+  "E3_L2_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "兩張工作表要互相參照，資料一改，結果就會自動更新。",
+    "file": "E3_L2_OPEN_03.mp3",
+    "generatedAt": "2026-11-04T02:06:40.964Z"
+  },
+  "E3_L2_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "消失咗嘅紀錄，全部都係午飯時間！",
+    "file": "E3_L2_CLOSE_01.mp3",
+    "generatedAt": "2026-11-04T02:06:41.972Z"
+  },
+  "E3_L3_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "今日話有成八千人一個鐘頭入閘？你呃鬼咩！",
+    "file": "E3_L3_OPEN_01.mp3",
+    "generatedAt": "2026-11-04T02:06:43.173Z"
+  },
+  "E3_L3_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "畫個圖出嚟，數據有冇古怪，一眼就睇到。",
+    "file": "E3_L3_OPEN_02.mp3",
+    "generatedAt": "2026-11-04T02:06:44.297Z"
+  },
+  "E3_L3_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "一個時段高到離譜，另一個時段又差唔多係零，兩個都喺午飯時間。",
+    "file": "E3_L3_CLOSE_01.mp3",
+    "generatedAt": "2026-11-04T02:06:45.966Z"
+  },
+  "E3_L4_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "站長室部電腦都有紀錄？唔好睇我呀！",
+    "file": "E3_L4_OPEN_01.mp3",
+    "generatedAt": "2026-11-04T02:06:46.982Z"
+  },
+  "E3_L4_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "用樞紐分析表，幾百條紀錄都可以即刻分類統計。",
+    "file": "E3_L4_OPEN_02.mp3",
+    "generatedAt": "2026-11-04T02:06:48.379Z"
+  },
+  "E3_L4_CLOSE_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "大量修改都係嚟自站長室部電腦，而且係用站長個帳戶。",
+    "file": "E3_L4_CLOSE_01.mp3",
+    "generatedAt": "2026-11-04T02:06:49.953Z"
+  },
+  "E3_L4_CLOSE_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "冇可能！嗰陣我出咗去食飯㗎！",
+    "file": "E3_L4_CLOSE_02.mp3",
+    "generatedAt": "2026-11-04T02:06:50.803Z"
+  },
+  "E3_L5_OPEN_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "如果你出去食飯，部電腦幾耐先會自動鎖機？",
+    "file": "E3_L5_OPEN_01.mp3",
+    "generatedAt": "2026-11-04T02:06:52.065Z"
+  },
+  "E3_L5_OPEN_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "呃……我都唔記得有冇設定過……",
+    "file": "E3_L5_OPEN_02.mp3",
+    "generatedAt": "2026-11-04T02:06:52.812Z"
+  },
+  "E3_L5_OPEN_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "改吓假設，睇吓邊個結論先有數據支持。",
+    "file": "E3_L5_OPEN_03.mp3",
+    "generatedAt": "2026-11-04T02:06:53.973Z"
+  },
+  "E3_L5_FIRST_CLEAR_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "有隊伍已經搵到真相，等全班完成先一齊揭曉！",
+    "file": "E3_L5_FIRST_CLEAR_01.mp3",
+    "generatedAt": "2026-11-04T02:06:55.270Z"
+  },
+  "E3_FINAL_REVEAL_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "咪咪：高音",
+    "text": "喵～",
+    "file": "E3_FINAL_REVEAL_01.mp3",
+    "generatedAt": "2026-11-04T02:06:55.592Z"
+  },
+  "E3_FINAL_REVEAL_02": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "真相大白：站長出去食飯冇鎖機，咪咪喺鍵盤上面行嚟行去，打咗成堆亂碼。",
+    "file": "E3_FINAL_REVEAL_02.mp3",
+    "generatedAt": "2026-11-04T02:06:57.678Z"
+  },
+  "E3_FINAL_REVEAL_03": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "咪咪！原來係你！",
+    "file": "E3_FINAL_REVEAL_03.mp3",
+    "generatedAt": "2026-11-04T02:06:58.187Z"
+  },
+  "E3_FINAL_REVEAL_04": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "我就話唔關我事啦！不過你哋肯認真查清楚，我收貨。",
+    "file": "E3_FINAL_REVEAL_04.mp3",
+    "generatedAt": "2026-11-04T02:06:59.571Z"
+  },
+  "E3_FINAL_REVEAL_05": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "火箭仔：語速快、自信",
+    "text": "咁……我嗰啲漏咗 $ 號嘅公式，就真係我自己寫錯嘅。",
+    "file": "E3_FINAL_REVEAL_05.mp3",
+    "generatedAt": "2026-11-04T02:07:00.875Z"
+  },
+  "E3_FINAL_REVEAL_06": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "八仔：活潑、清脆（較高音）",
+    "text": "記住：離開座位要鎖機，重要嘅工作表要保護，唔同人要有唔同權限。",
+    "file": "E3_FINAL_REVEAL_06.mp3",
+    "generatedAt": "2026-11-04T02:07:02.737Z"
+  },
+  "E3_FINAL_REVEAL_07": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "陳定：平穩、清晰、略慢（較低沉）",
+    "text": "最重要係：見到數據，要先核對，先好落結論。",
+    "file": "E3_FINAL_REVEAL_07.mp3",
+    "generatedAt": "2026-11-04T02:07:03.945Z"
+  },
+  "E3_FINAL_REVEAL_08": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "肥站長：低沉、誇張",
+    "text": "今年最佳站長獎，就頒畀全班數據偵探！",
+    "file": "E3_FINAL_REVEAL_08.mp3",
+    "generatedAt": "2026-11-04T02:07:05.210Z"
+  },
+  "E3_TIMER_WARNING_01": {
+    "source": "local-tts:sherpa-onnx/vits-cantonese",
+    "voice": "暴躁阿叔：低沉、急促",
+    "text": "仲有一分鐘呀！快啲檢查清楚啦！",
+    "file": "E3_TIMER_WARNING_01.mp3",
+    "generatedAt": "2026-11-04T02:07:06.044Z"
   }
 }
