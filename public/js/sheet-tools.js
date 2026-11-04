@@ -28,7 +28,8 @@ function modal(title, body, actions) {
   const bg = h('div.st-overlay', { onmousedown: (e) => { if (e.target === bg) close(); } }, box);
   const close = () => bg.remove();
   document.body.append(bg);
-  setTimeout(() => box.querySelector('input,select,button.primary')?.focus(), 30);
+  // 自動聚焦第一個欄位（如使用者已開始輸入其他欄位，不會搶走焦點）
+  setTimeout(() => { if (!box.contains(document.activeElement)) box.querySelector('input,select,button.primary')?.focus(); }, 30);
   return close;
 }
 

@@ -11,6 +11,7 @@ let me = null;
 let editor = null;
 let chat = null; // 隊伍對話面板
 let lastDriverTask = null;
+let switchSheet = false; // 新一關開始：工作表自動切換到該關
 let rulesSig = '';
 let wasDown = false;
 let viewPractice = null; // 正在做的練習（reopenId）
@@ -163,7 +164,7 @@ function render() {
     const lv = state.levels.find((l) => l.level === activeNow);
     levelTransition({ level: activeNow, title: lv.title, color: t.color });
   }
-  if (activeNow !== lastActive) { if (activeNow) viewLevel = activeNow; lastActive = activeNow; }
+  if (activeNow !== lastActive) { if (activeNow) { viewLevel = activeNow; switchSheet = true; } lastActive = activeNow; }
 
   const wantMode = state.status === 'RESULTS' || state.status === 'ARCHIVED' ? 'results' : 'play';
   if (mode !== wantMode) {
@@ -297,6 +298,10 @@ function renderSheetBox() {
   if (editor.tabsKey !== key) {
     editor.tabsKey = key;
     editor.setTabs(tabs, active ? { sheet: active.sheet, layer: 'main' } : null);
+  }
+  if (switchSheet && active) {
+    switchSheet = false;
+    if (editor.cur?.sheet !== active.sheet || editor.cur?.layer !== 'main') editor.open(active.sheet, 'main');
   }
   // 題目狀態（開放／鎖定／完成）或暫停改變：更新可編輯範圍
   renderDriverBar();

@@ -83,7 +83,8 @@ test('第三集：排序、篩選、多工作表、圖表、樞紐分析表、�
       const meA = await A.evaluate(() => window.__tyState.driver.driver.isMe);
       return meA ? [A, B] : [B, A];
     };
-    const onSheet = (S, name) => S.waitForFunction((n) => window.__tyEditor?.cur?.sheet === n && window.__tyEditor.payload?.sheet === n, name, { timeout: 15000 });
+    const onSheet = (S, name) => S.waitForFunction((n) => window.__tyEditor?.cur?.sheet === n && window.__tyEditor.payload?.sheet === n, name, { timeout: 15000 })
+      .catch(async (e) => { console.log('DBG onSheet', name, await S.evaluate(() => JSON.stringify({ cur: window.__tyEditor?.cur, payload: window.__tyEditor?.payload?.sheet, tabs: window.__tyEditor?.tabs?.map((t) => t.sheet), levels: window.__tyState?.levels?.map((l) => l.phase), status: window.__tyState?.status }))); throw e; });
     const saved = (S) => S.waitForFunction(() => window.__tyEditor.pending.size === 0 && !window.__tyEditor.sending, null, { timeout: 10000 });
     const typeCell = async (S, a, text) => { await S.click(`.se-table td[data-a="${a}"]`); await S.keyboard.type(text); await S.keyboard.press('Enter'); await saved(S); };
     const fillDown = async (S, from, to) => { await S.click(`.se-table td[data-a="${from}"]`); await S.click(`.se-table td[data-a="${to}"]`, { modifiers: ['Shift'] }); await S.click('button:has-text("向下填充")'); await saved(S); };
@@ -223,13 +224,14 @@ test('第三集：排序、篩選、多工作表、圖表、樞紐分析表、�
     await saved(D);
     await D.waitForSelector('.st-drawer .st-scen td:text-is("LOCK30")');
     // 目標搜尋：I1 達到 I2
-    const i2 = Number(await D.textContent('.se-table td[data-a="I2"]'));
+    await D.waitForFunction(() => typeof window.__tyEditor.wb.getValue('E3L5_Model', 'I2') === 'number' && window.__tyEditor.wb.getValue('E3L5_Model', 'I2') > 0);
+    const i2 = await D.evaluate(() => window.__tyEditor.wb.getValue('E3L5_Model', 'I2'));
     await D.click('button:has-text("目標搜尋")');
     await D.fill('.st-modal input[aria-label="目標儲存格"]', 'I1');
     await D.fill('.st-modal input[aria-label="目標值"]', String(i2));
     await D.fill('.st-modal input[aria-label="搜尋上限"]', '120');
     await D.click('.st-modal button:has-text("搜尋")');
-    await D.waitForSelector('.st-modal .notice:has-text("達到目標值")');
+    await D.waitForSelector('.st-modal .notice:has-text("達到目標值")').catch(async (e) => { console.log('DBG goal', i2, await D.evaluate(() => JSON.stringify([...document.querySelectorAll('.st-modal input, .st-modal select')].map((x) => [x.getAttribute('aria-label'), x.value]))), await D.evaluate(() => JSON.stringify({ b3: window.__tyEditor.inputOf('B3'), i1: window.__tyEditor.wb.getValue('E3L5_Model', 'I1'), e: window.__tyEditor.inputOf('E2'), f: window.__tyEditor.inputOf('F2') })), await D.evaluate(async () => { const ed = window.__tyEditor; const w = ed.wb.clone(); const out = []; for (const x of [0, 30, 120]) { w.setInput('E3L5_Model', 'B3', x); out.push([x, w.getValue('E3L5_Model', 'I1'), w.getValue('E3L5_Model', 'I2'), w.getValue('E3L5_Model', 'E2')]); } return JSON.stringify({ out, sheets: [...ed.wb.sheets.keys()], cells: ed.wb.sheet('E3L5_Model').cells.size }); })); throw e; });
     await D.click('.st-modal button.primary:has-text("套用到儲存格")');
     await saved(D);
     const minLock = ds().levels[5].params.minLock;
