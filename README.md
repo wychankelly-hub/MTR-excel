@@ -34,6 +34,7 @@ npm start
 | 內置工作表（公式列、$ 參照、複製／填充、鍵盤操作、受保護格、逐格儲存、隊友即時同步、衝突偵測） | ✅ 已實作並以 30 人負載測試 |
 | 伺服器端隊伍及班別隔離、老師分隊、學生名單 | ✅ 已實作並測試（改網址／參數不能看到其他隊） |
 | 逐題開放／鎖定、重開（練習不計分／補做）、老師題目預覽及即時工作表 | ✅ 已實作並測試 |
+| 隨機 Driver（每題公平輪換，只有 Driver 可輸入及提交）＋隊伍對話（只限同隊及老師） | ✅ 已實作並以 30 人負載測試 |
 | Formula Validation（AST 解析、重算、指定函數、`$` 參照、複製範圍、隱藏測試、等價公式） | ✅ 已實作（Demo 與正式模式共用） |
 | Dynamic Dataset Generator（Seed 可重現、約束檢查、自動重抽、Preflight） | ✅ 已實作 |
 | 計分、Leaderboard、Tie-breaker、冪等提交、審計紀錄、CSV 匯出 | ✅ 已實作 |
@@ -55,10 +56,10 @@ npm start
 | 指令 | 用途 |
 |-|-|
 | `npm start` | 啟動伺服器 |
-| `npm test` | 驗收測試（99 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性及重新啟動可靠性） |
+| `npm test` | 驗收測試（109 項；設定 `TEST_DATABASE_URL` 時另測雲端資料庫持久性及重新啟動可靠性） |
 | `npm run test:e2e` | 瀏覽器端到端測試（需要 Playwright + Chromium） |
 | `npm run demo:bots` | 六隊加速課堂模擬及壓力測試 |
-| `npm run load:test` | 30 名學生經 HTTP 使用內置工作表的課堂負載測試（第二集；設定 `DATABASE_URL` 即測 PostgreSQL） |
+| `npm run load:test` | 30 名學生經 HTTP 使用內置工作表、隨機 Driver 及隊伍對話的課堂負載測試（第二集；`--no-driver` 測舊模式；設定 `DATABASE_URL` 即測 PostgreSQL） |
 | `npm run preflight:report -- SEED 6` | 命令列 Preflight 報告 |
 | `npm run google:smoke` | **真實** Google Sheets 端到端測試（需要憑證） |
 | `npm run tts:setup` | 下載本機粵語 TTS 模型（約 110 MB；只在需要重新合成時使用） |

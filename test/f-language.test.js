@@ -42,7 +42,7 @@ test('42. 學生須閱讀的題目、Hints、Feedback 均為繁體中文', () =>
   for (const l of LEVELS) for (const h of l.hints) assert.match(h, /[一-鿿]/);
   // 前端可見文字
   const root = path.resolve(import.meta.dirname, '..', 'public');
-  for (const f of ['index.html', 'student.html', 'projector.html', 'teacher.html', 'js/student.js', 'js/projector.js', 'js/sheet-grid.js', 'js/common.js', 'js/teacher.js', 'js/characters.js', 'js/rail.js', 'js/stage.js', 'js/audio.js', 'js/sheet-editor.js']) {
+  for (const f of ['index.html', 'student.html', 'projector.html', 'teacher.html', 'js/student.js', 'js/projector.js', 'js/sheet-grid.js', 'js/common.js', 'js/teacher.js', 'js/characters.js', 'js/rail.js', 'js/stage.js', 'js/audio.js', 'js/sheet-editor.js', 'js/team-chat.js']) {
     const src = fs.readFileSync(path.join(root, f), 'utf8');
     const zh = (src.match(/[一-鿿]+/g) || []).join('');
     assert.deepEqual(simplifiedIn(zh), [], `${f} 含疑似簡體字`);

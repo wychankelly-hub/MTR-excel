@@ -20,6 +20,9 @@ server/
   episode1/        blueprint（題目藍圖）、generator（數據生成）、validators（逐題批改）、
                    feedback（中文回饋及賽後回顧）、fixtures（正確／常見錯誤公式）、preflight、dialogue（配音事件）
   episode2/        第二集《疑犯火箭仔》，結構與第一集相同
+  drivers.js       隨機 Driver：公平輪換、每題指派、伺服器端權限
+  chat.js          隊伍對話（只限同隊及老師）
+  presence.js      學生即時連線狀態（記憶體）
   sheets.js        內置工作表：逐格儲存（版本號）、修改／衝突、練習副本、工作表內容及編輯規則
   adapters/        demo-adapter（內置工作表；'builtin' 與 'demo' 相同）、google-adapter（舊模式 Google Sheets）、start-sheet
   competition.js   狀態機、隊伍、計時、提示、人工調分、音訊 Spoiler Policy
@@ -28,7 +31,7 @@ server/
   views.js         Teacher／Student／Projector 視圖（權限過濾）
   realtime.js      SSE
   audio-assets.js  音檔狀態、試聽批准、錄音上載
-public/            前端（js/sheet-editor.js：內置工作表編輯器，直接使用伺服器的公式引擎 /engine/*）
+public/            前端（js/team-chat.js：隊伍對話面板；js/sheet-editor.js：內置工作表編輯器，直接使用伺服器的公式引擎 /engine/*）
 scripts/           demo-bots、google-smoke-test、generate-tts、preflight-report
 test/              驗收測試（a–g）及瀏覽器 E2E
 ```
@@ -103,6 +106,17 @@ test/              驗收測試（a–g）及瀏覽器 E2E
 
 ## 多班別
 每場比賽有自己的代碼、名單、工作表、分數、排行榜及計時；隊伍編號只在比賽內有效，所以不同班可用相同隊名。分隊方式（老師分隊／學生自選一次）、學生名單（網域／電郵）及「必須以 Google 登入」在加入時於伺服器檢查。
+
+## 隨機 Driver（`server/drivers.js`）
+- 狀態存於 `comp.drivers[teamId]`：`round`（本輪隨機次序）、`used`（本輪已擔任）、`tasks[taskId]`（每題的 Driver、時間、方式 auto／solo／teacher）、`history`、`current`（目前題目）。隨比賽核心紀錄寫入資料庫。
+- `syncDrivers(comp)` 在每次 `changed()` 時執行：每隊的「目前題目」= 按題目次序第一題開放作答（或補做）而未全對的題目；未有 Driver 時按輪換選出。已指派的題目不會自動改變（Driver 離隊除外）。
+- 權限在伺服器：`editRulesFor(…, user)` 只把目前題目的作答格開放給該題 Driver（練習副本不限）；`submitTask` 以 `driverBlock` 拒絕非 Driver（403 `NOT_DRIVER`）及非目前題目（409 `NOT_CURRENT_TASK`）。
+- 連線狀態（`server/presence.js`）只在記憶體：學生的即時連線（SSE）開啟／關閉時更新，並推送給老師及隊友；重新整理有 20 秒寬限。
+
+## 隊伍對話（`server/chat.js`）
+- `comp.chat[]`：`{id, teamId, taskId, userId, name, text, at, deleted}`；資料庫按每 50 則一段（`competition:<id>:chat:<n>`），新訊息只寫入最新一段。寫入資料庫後才即時推送（SSE `chat` 事件只送到同一比賽、同一隊的學生及該比賽的老師；投影畫面及公開視圖沒有對話）。
+- API：`GET/POST /api/chat`（隊伍由登入身份決定）、`GET /api/teacher/competitions/:id/chat?teamId=`、`POST …/chat/:msgId/delete`、`POST …/drivers`（重新指派）。
+- 防洗版及重試：每人／每隊頻率限制、300 字上限、`clientId` 令網絡重試不會重複加入。
 
 ## 擴展到 Episode 3
 新增 `server/episodeN/`（blueprint、generator、validators、fixtures、feedback、dialogue、preflight），並在 `server/episodes/index.js` 登記；比賽記錄 `episode` 欄位決定使用哪一集（舊比賽沒有此欄位時視為 E1）。計分、登入、工作表、提交流程不需改寫。
