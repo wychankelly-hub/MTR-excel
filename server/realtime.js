@@ -1,6 +1,7 @@
 // Server-Sent Events：每個連線按角色取得過濾後的資料。
 import { bus } from './bus.js';
 import { db } from './store.js';
+import { connected, disconnected } from './presence.js';
 
 const clients = new Set(); // { res, viewFn, info: { role, compId, userId, teamId } }
 const pending = new Map(); // compId -> timer
@@ -16,7 +17,14 @@ export function addClient(req, res, info, viewFn) {
   clients.add(client);
   send(client, 'state', viewFn());
   const ka = setInterval(() => res.write(': keep-alive\n\n'), 20000);
-  req.on('close', () => { clearInterval(ka); clients.delete(client); });
+  // 學生連線狀態（選擇 Driver、顯示 Driver 是否離線）：上線／離線時更新老師及隊友的畫面（不寫入資料庫）
+  const student = info.role === 'student' && info.userId ? [info.compId, info.userId] : null;
+  if (student && connected(...student)) bus.emit('changed', info.compId, 'presence');
+  req.on('close', () => {
+    clearInterval(ka);
+    clients.delete(client);
+    if (student && disconnected(...student)) bus.emit('changed', info.compId, 'presence');
+  });
 }
 
 function send(client, event, data) {
@@ -64,6 +72,14 @@ bus.on('presence', (compId, teamId, payload) => {
   for (const c of clients) {
     if (c.info.role === 'student' && c.info.userId === payload.user.id) continue;
     if (c.info.role === 'teacher' ? c.info.compId === compId : c.info.role === 'student' && isTeamMember(compId, teamId, c.info.userId)) send(c, 'presence', { compId, teamId, ...payload });
+  }
+});
+
+// 隊伍對話：只送到同一比賽、同一隊的學生及該比賽的老師；投影畫面永遠收不到
+bus.on('chat', (compId, teamId, payload) => {
+  for (const c of clients) {
+    if (c.info.compId !== compId) continue;
+    if (c.info.role === 'teacher' || (c.info.role === 'student' && c.info.teamId === teamId && isTeamMember(compId, teamId, c.info.userId))) send(c, 'chat', { teamId, ...payload });
   }
 });
 

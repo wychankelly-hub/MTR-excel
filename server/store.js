@@ -43,6 +43,7 @@ const stats = { since: Date.now(), writes: 0, keysWritten: 0, cellsWritten: 0, b
 // 提交紀錄及審計紀錄分段儲存：每次只需寫入核心資料及最新一段，而不是整個比賽紀錄
 const SUB_CHUNK = 25;
 const AUDIT_CHUNK = 100;
+const CHAT_CHUNK = 50; // 隊伍對話每 50 則一段：新訊息只寫入最新一段
 const assetIndex = new Map(); // path -> { contentType, size, version }
 const assetCache = new Map(); // path -> Buffer
 
@@ -102,21 +103,23 @@ export async function init() {
     lastSaved.set(key, JSON.stringify(value));
     stats.bytesRead += lastSaved.get(key).length;
     lastWrite = Math.max(lastWrite, Number(t));
-    const m = key.match(/^competition:([^:]+)(?::(sub|audit):(\d+))?$/);
+    const m = key.match(/^competition:([^:]+)(?::(sub|audit|chat):(\d+))?$/);
     if (m) {
-      const c = (comps[m[1]] ??= { core: null, sub: [], audit: [] });
+      const c = (comps[m[1]] ??= { core: null, sub: [], audit: [], chat: [] });
       if (m[2]) c[m[2]][Number(m[3])] = value;
       else c.core = value;
     } else if (key.startsWith('demoSheets:')) state.demoSheets[key.slice(11)] = value;
     else if (key in state) state[key] = value;
   }
-  for (const [id, { core, sub, audit }] of Object.entries(comps)) {
+  for (const [id, { core, sub, audit, chat }] of Object.entries(comps)) {
     if (!core) continue;
     // 新格式：分段；舊格式（整個比賽一個值）照樣讀取，下次寫入時自動轉為分段
     if (core.submissionChunks !== undefined) core.submissions = Array.from({ length: core.submissionChunks }, (_, i) => sub[i] || []).flat();
     if (core.auditChunks !== undefined) core.audit = Array.from({ length: core.auditChunks }, (_, i) => audit[i] || []).flat();
+    if (core.chatChunks !== undefined) core.chat = Array.from({ length: core.chatChunks }, (_, i) => chat[i] || []).flat();
     delete core.submissionChunks;
     delete core.auditChunks;
+    delete core.chatChunks;
     core.submissions ??= [];
     core.audit ??= [];
     state.competitions[id] = core;
@@ -183,7 +186,7 @@ function pruneSessions() {
 }
 
 function addCompetition(out, id, c) {
-  const { submissions = [], audit = [], ...core } = c;
+  const { submissions = [], audit = [], chat = [], ...core } = c;
   // 投影畫面每 15 秒的狀態回報只屬即時資訊，不寫入資料庫（重新啟動後投影畫面會再次回報）
   if (core.audio) {
     core.audio = { ...core.audio };
@@ -192,9 +195,11 @@ function addCompetition(out, id, c) {
   }
   core.submissionChunks = Math.ceil(submissions.length / SUB_CHUNK);
   core.auditChunks = Math.ceil(audit.length / AUDIT_CHUNK);
+  core.chatChunks = Math.ceil(chat.length / CHAT_CHUNK);
   out.set(`competition:${id}`, core);
   for (let i = 0; i < core.submissionChunks; i++) out.set(`competition:${id}:sub:${i}`, submissions.slice(i * SUB_CHUNK, (i + 1) * SUB_CHUNK));
   for (let i = 0; i < core.auditChunks; i++) out.set(`competition:${id}:audit:${i}`, audit.slice(i * AUDIT_CHUNK, (i + 1) * AUDIT_CHUNK));
+  for (let i = 0; i < core.chatChunks; i++) out.set(`competition:${id}:chat:${i}`, chat.slice(i * CHAT_CHUNK, (i + 1) * CHAT_CHUNK));
 }
 
 function snapshotKeys(all, groups) {

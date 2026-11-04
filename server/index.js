@@ -18,6 +18,8 @@ import { episodeOf } from './episodes/index.js';
 import { publicView, studentView, teacherView, resultsCsv, toCsv } from './views.js';
 import { submissionSummary } from './submission.js';
 import { addClient, clientCount } from './realtime.js';
+import { postChat, chatFor, deleteChat, chatAllowed, announceChat } from './chat.js';
+import { setDriver } from './drivers.js';
 import { bus } from './bus.js';
 import { assetTable, reviewAsset, uploadAsset, resolvedEvent, regenerateAsset, revertAsset, autoFillMissingAudio } from './audio-assets.js';
 import { localTtsStatus } from './tts/local-tts.js';
@@ -371,6 +373,48 @@ export function createApp() {
       bus.emit('presence', comp.id, team.id, { sheet: req.params.sheet, layer, a, editing: !!req.body?.editing, user: { id: u.id, name: u.name }, at: clock.now() });
     }
     res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ 隊伍對話（只限本隊；隊伍由登入身份決定）
+  const chatTeam = (req) => {
+    const { u, comp } = studentComp(req);
+    const team = C.teamOfUser(comp, u.id);
+    if (!team) throw new HttpError(403, '你未分配到任何隊伍，請等候老師分隊。', 'NO_TEAM');
+    return { u, comp, team };
+  };
+  api.get('/chat', (req, res) => {
+    const { comp, team } = chatTeam(req);
+    res.json({ teamId: team.id, ...chatAllowed(comp, team), messages: chatFor(comp, team.id, { after: Number(req.query.after) || 0 }) });
+  });
+  api.post('/chat', async (req, res) => {
+    const { u, comp, team } = chatTeam(req);
+    const r = postChat(comp, team, u, req.body || {});
+    if (!r.duplicate) {
+      save(`competition:${comp.id}`);
+      if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存訊息，請再試一次。', 'NOT_SAVED');
+      announceChat(comp, r.message);
+    }
+    res.json(r.message);
+  });
+  api.get('/teacher/competitions/:id/chat', (req, res) => {
+    const { comp } = owned(req);
+    const team = C.getTeam(comp, String(req.query.teamId || ''));
+    res.json({ teamId: team.id, ...chatAllowed(comp, team), messages: chatFor(comp, team.id, { after: Number(req.query.after) || 0 }) });
+  });
+  api.post('/teacher/competitions/:id/chat/:msgId/delete', async (req, res) => {
+    const { t, comp } = owned(req);
+    const m = deleteChat(comp, t, req.params.msgId);
+    save(`competition:${comp.id}`);
+    await persistNow();
+    res.json(m);
+  });
+  // 隨機 Driver：老師重新指派（userId 留空 = 按輪換表選下一位）
+  api.post('/teacher/competitions/:id/drivers', async (req, res) => {
+    const { t, comp } = owned(req);
+    const r = setDriver(comp, t, { teamId: String(req.body?.teamId || ''), taskId: req.body?.taskId ? String(req.body.taskId) : null, userId: req.body?.userId ? String(req.body.userId) : null, reason: req.body?.reason });
+    C.changed(comp, 'driver');
+    if (!(await persistNow())) throw new HttpError(503, '伺服器暫時未能儲存，請再試一次。', 'NOT_SAVED');
+    res.json(r);
   });
 
   // 練習（重做）：可以是目前的比賽或之前的劇集；一律檢查學生是否屬於該比賽中獲重開題目的隊伍

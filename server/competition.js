@@ -13,6 +13,7 @@ import { rankTeams, computeTeamScore } from './scoring.js';
 import { episodeOf, episodeById } from './episodes/index.js';
 import { configureSheets, MAIN, forgetComp as forgetSheets } from './sheets.js';
 import { expandRange } from './engine/refs.js';
+import { syncDrivers, driverMode, driverOf } from './drivers.js';
 
 export const STATUS = {
   DRAFT: 'DRAFT', PREFLIGHT: 'PREFLIGHT', APPROVED: 'APPROVED', LOBBY: 'LOBBY',
@@ -101,12 +102,14 @@ export function teamTaskState(comp, team, task) {
  * 某隊在某工作表（正式作答或練習副本）目前可以編輯的儲存格。
  * 學生的每次修改都會經過這裏檢查；網址或參數不能繞過。
  */
-export function editRulesFor(comp, team, level, layer = MAIN) {
+export function editRulesFor(comp, team, level, layer = MAIN, user = null) {
   const ep = episodeOf(comp);
   const lv = ep.levelByNum[level];
   const editable = new Set();
   const answer = new Set(lv.editable.flatMap(expandRange));
   const tasks = [];
+  const notDriver = new Set();
+  const drivers = driverMode(comp) ? (comp.drivers?.[team.id] || { current: null }) : null;
   let layerReopen = null;
   if (layer && layer !== MAIN) {
     layerReopen = (comp.reopens || []).find((r) => r.id === layer) || null;
@@ -122,13 +125,19 @@ export function editRulesFor(comp, team, level, layer = MAIN) {
     else if (st.reopen?.mode === 'makeup') open = true;
     else open = st.state === 'active';
     if (comp.paused) open = false;
+    // Random Driver：正式作答只有目前題目的 Driver 可以修改（練習副本不受限制）；user 為 null 時是伺服器或老師唯讀檢視
+    let driverBlocked = false;
+    if (open && !layerReopen && drivers && user) {
+      if (t.id !== drivers.current || driverOf(comp, team, t.id) !== user.id) { open = false; driverBlocked = true; }
+    }
     if (open) for (const a of t.cells.flatMap(expandRange)) editable.add(a);
+    if (driverBlocked) for (const a of t.cells.flatMap(expandRange)) notDriver.add(a);
     tasks.push({ id: t.id, cells: t.cells, bonus: !!t.bonus, state: layerReopen ? (layerReopen.taskId === t.id ? (layerReopen.closedAt ? 'closed' : 'practice') : 'locked') : st.reopen ? 'reopened' : st.state, editable: open });
   }
   return {
     editable,
     tasks,
-    reasonFor: (a) => (!answer.has(a) ? 'PROTECTED' : comp.paused ? 'PAUSED' : 'LOCKED'),
+    reasonFor: (a) => (!answer.has(a) ? 'PROTECTED' : comp.paused ? 'PAUSED' : notDriver.has(a) ? 'NOT_DRIVER' : 'LOCKED'),
   };
 }
 
@@ -162,6 +171,8 @@ export function audit(comp, by, action, detail = {}) {
 }
 
 export function changed(comp, reason) {
+  // 每次比賽紀錄改變（開始關卡、提交、老師操作、隊員改變…）都檢查各隊目前題目的 Driver
+  syncDrivers(comp);
   save(`competition:${comp.id}`);
   bus.emit('changed', comp.id, reason);
 }
@@ -230,6 +241,10 @@ export function createCompetition(teacher, opts = {}) {
       allowedEmails: cleanEmails(opts.allowedEmails),
       allowedDomains: cleanDomains(opts.allowedDomains),
       requireGoogle: !!opts.requireGoogle,
+      // 隨機 Driver：每一題由一名隊員輸入及提交，其他隊員唯讀並在隊伍對話討論
+      randomDriver: !!opts.randomDriver,
+      chatEnabled: opts.chatEnabled !== false,
+      chatMutedTeams: [],
     },
     waiting: [], // 已加入比賽、等候老師分隊的學生
     teams: makeTeams(teamCount),
@@ -250,6 +265,9 @@ export function createCompetition(teacher, opts = {}) {
     health: { sheets: adapter === 'google' ? 'Unavailable' : 'Ready', sheetsFailures: 0, lastSheetsError: null },
     taskOverrides: {}, // taskId -> 'locked'（老師在進行中的關卡暫時鎖定某題）
     reopens: [], // 重開題目（練習／補做）
+    drivers: {}, // teamId -> 輪換狀態及每題 Driver（見 drivers.js）
+    chat: [], // 隊伍對話（只限同隊及老師）
+    chatSeq: 0,
     audit: [],
   };
   db.state.competitions[id] = comp;
@@ -305,6 +323,9 @@ export function updateSettings(comp, teacher, patch) {
   if (patch.requireGoogle !== undefined) s.requireGoogle = !!patch.requireGoogle;
   if (patch.taskByTask !== undefined) s.taskByTask = !!patch.taskByTask;
   if (patch.lockOnComplete !== undefined) s.lockOnComplete = !!patch.lockOnComplete;
+  if (patch.randomDriver !== undefined) s.randomDriver = !!patch.randomDriver;
+  if (patch.chatEnabled !== undefined) s.chatEnabled = !!patch.chatEnabled;
+  if (Array.isArray(patch.chatMutedTeams)) s.chatMutedTeams = patch.chatMutedTeams.filter((id) => comp.teams.some((t) => t.id === id));
   if (patch.title) comp.title = String(patch.title).slice(0, 80);
   if (Array.isArray(patch.teams)) {
     for (const p of patch.teams) {

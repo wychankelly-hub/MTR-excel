@@ -596,6 +596,8 @@ export class SheetEditor {
 
   explainLocked(a) {
     const t = this.taskOf.get(a);
+    const custom = this.answer.has(a) && !this.payload?.paused ? this.opts.lockedReason?.(a, t) : null;
+    if (custom) { toast(custom, 'error'); return; }
     if (this.answer.has(a)) toast(`${a} 現在不可編輯：${t ? `${t.id} ${STATE_LABEL[t.state] || ''}` : ''}${this.payload?.paused ? '（比賽暫停中）' : ''}`, 'error');
     else toast(`${a} 是受保護的原始資料或說明，不可修改。黃色儲存格才是作答格。`, 'error');
   }

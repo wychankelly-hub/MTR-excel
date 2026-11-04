@@ -16,7 +16,7 @@ let dirty = false;
 let sys = null;
 
 const TABS = [
-  ['setup', 'A. 設定'], ['teams', 'B. 隊伍'], ['preflight', 'C. 數據預檢'], ['live', 'D. 即時控制'], ['questions', 'G. 題目及工作表'],
+  ['setup', 'A. 設定'], ['teams', 'B. 隊伍'], ['preflight', 'C. 數據預檢'], ['live', 'D. 即時控制'], ['questions', 'G. 題目及工作表'], ['drivers', 'H. Driver 及對話'],
   ['diag', 'E. 即時診斷'], ['results', 'F. 結果'], ['audio', '配音資產'], ['chars', '角色圖片'], ['system', '系統狀態'], ['audit', '審計紀錄'],
 ];
 
@@ -84,6 +84,7 @@ async function selectComp(id) {
     audio: (m) => device.onAudio(m),
     cells: (d) => { if (qv.editor && d.teamId === qv.teamId) qv.editor.applyRemote(d); },
     presence: (d) => { if (qv.editor && d.teamId === qv.teamId) qv.editor.applyPresence(d); },
+    chat: (d) => onTeacherChat(d),
   }, (ok) => { $('conn').textContent = ok ? '即時連線' : '重新連線中…'; $('conn').className = `conn pill ${ok ? 'ok' : 'warn'}`; });
 }
 
@@ -119,7 +120,7 @@ function renderAll() {
 
 function renderView() {
   const v = $('view');
-  const fn = { setup: viewSetup, teams: viewTeams, preflight: viewPreflight, live: viewLive, questions: viewQuestions, diag: viewDiag, results: viewResults, audio: viewAudio, chars: viewChars, system: viewSystem, audit: viewAudit }[tab];
+  const fn = { setup: viewSetup, teams: viewTeams, preflight: viewPreflight, live: viewLive, questions: viewQuestions, drivers: viewDrivers, diag: viewDiag, results: viewResults, audio: viewAudio, chars: viewChars, system: viewSystem, audit: viewAudit }[tab];
   const scroll = window.scrollY;
   clear(v, comp ? stepper() : null, fn());
   window.scrollTo(0, scroll);
@@ -169,6 +170,8 @@ function viewSetup() {
       h('option', { value: 'google', selected: comp?.adapter === 'google', disabled: me.provider === 'demo' }, `舊模式：Google Sheets${me.provider === 'demo' ? '（需以 Google 登入）' : googleReady ? '' : '（Google 尚未連接）'}`)),
     taskByTask: h('input', { type: 'checkbox', checked: !!s?.taskByTask }),
     lockOnComplete: h('input', { type: 'checkbox', checked: s ? s.lockOnComplete !== false : true }),
+    randomDriver: h('input', { type: 'checkbox', checked: s ? !!s.randomDriver : true }),
+    chatEnabled: h('input', { type: 'checkbox', checked: s ? s.chatEnabled !== false : true }),
     teamSelection: h('select', h('option', { value: 'teacher', selected: !s || s.teamSelection === 'teacher' }, '老師分隊（建議）'), h('option', { value: 'student', selected: s?.teamSelection === 'student' }, '學生加入時自選一次')),
     requireGoogle: h('input', { type: 'checkbox', checked: !!s?.requireGoogle }),
     allowed: h('textarea', { rows: 3, style: { width: '100%' }, placeholder: '（可選）只容許這些學校網域或電郵加入，例如 school.edu.hk 或 s1234@school.edu.hk；以逗號或換行分隔', value: [...(s?.allowedDomains || []), ...(s?.allowedEmails || [])].join('\n') }),
@@ -189,6 +192,8 @@ function viewSetup() {
     teamSelection: f.teamSelection.value,
     taskByTask: f.taskByTask.checked,
     lockOnComplete: f.lockOnComplete.checked,
+    randomDriver: f.randomDriver.checked,
+    chatEnabled: f.chatEnabled.checked,
     requireGoogle: f.requireGoogle.checked,
     allowedDomains: f.allowed.value.split(/[\s,;]+/).filter((x) => x && !x.includes('@')),
     allowedEmails: f.allowed.value.split(/[\s,;]+/).filter((x) => x.includes('@')),
@@ -207,6 +212,8 @@ function viewSetup() {
         h('small.muted', '內置工作表：每隊一份工作表，只有該隊學生可以查看及編輯；作答逐格儲存在雲端資料庫，隊友即時同步。'),
         h('label', f.taskByTask, '逐題開放（開始關卡時只開放第一題，其餘題目由老師在「G. 題目及工作表」逐題開放）'),
         h('label', f.lockOnComplete, '全對的題目自動鎖定（避免之後誤改；老師可重開）'),
+        h('label', f.randomDriver, '隨機 Driver（建議）：每一題隨機輪流由一名隊員輸入及提交，其他隊員唯讀並在隊伍對話討論'),
+        h('label', f.chatEnabled, '開啟隊伍對話（只限同隊及老師；投影畫面不會顯示）'),
         h('div', h('strong', '每關時間（分鐘）'), h('div.row', epCfg.levels.map((l, i) => h('label', `L${l.level}`, times[i])))),
         epCfg.hasBonus ? h('label', f.bonus, '開啟 Bonus 加題（L1 MIN，+50；所有隊伍相同機會）') : null,
         h('label', f.captain, '只容許隊長（Captain）提交'),
@@ -458,6 +465,92 @@ function miniBoard(rows) {
     h('tbody', rows.map((r) => h('tr', h('td', r.rank), h('td', h('span.dot', { style: { background: r.color } }), ' ', r.name),
       h('td', Object.entries(r.progress).map(([lv, p]) => h('span', { title: `L${lv}`, style: { marginRight: '4px' } }, p.completed ? '●' : p.done ? '◐' : '○'))),
       h('td.num', r.baseTotal), h('td.num', h('strong', r.total))))));
+}
+
+// ======================================================================= H. Driver 及隊伍對話
+const tchat = { teamId: null, messages: [], loading: false, loadedFor: null };
+
+function onTeacherChat(d) {
+  if (d.teamId !== tchat.teamId) { if (tab === 'drivers') renderView(); return; }
+  if (d.type === 'message' && !tchat.messages.some((m) => m.id === d.message.id)) tchat.messages.push(d.message);
+  if (d.type === 'delete') { const m = tchat.messages.find((x) => x.id === d.id); if (m) { m.deleted = true; m.text = ''; } }
+  if (tab === 'drivers' && !editing()) renderView();
+}
+
+async function loadTeacherChat(teamId) {
+  tchat.teamId = teamId;
+  tchat.loading = true;
+  try {
+    const r = await api('GET', `/teacher/competitions/${compId}/chat?teamId=${encodeURIComponent(teamId)}`);
+    if (tchat.teamId === teamId) { tchat.messages = r.messages; tchat.loadedFor = `${compId}:${teamId}`; }
+  } catch (e) { toast(e.message, 'error'); }
+  tchat.loading = false;
+  if (tab === 'drivers') renderView();
+}
+
+const BY_LABEL = { auto: '輪換', solo: '唯一在線', teacher: '老師指派' };
+
+function offlineText(dv, graceMs) {
+  if (!dv) return null;
+  if (dv.online) return h('span.pill.ok', '● 在線');
+  if (!dv.seen) return h('span.pill', '未連線');
+  const ms = serverClock.now() - dv.offlineSince;
+  return ms > graceMs ? h('span.pill.bad', `離線 ${Math.round(ms / 1000)} 秒：可重新指派`) : h('span.pill.warn', `重新連線中（${Math.round(ms / 1000)} 秒）`);
+}
+
+function viewDrivers() {
+  const D = comp.drivers || { enabled: false, teams: {} };
+  const s = comp.settings;
+  if (!tchat.teamId || !comp.teams.some((t) => t.id === tchat.teamId)) tchat.teamId = comp.teams[0]?.id || null;
+  if (tchat.teamId && tchat.loadedFor !== `${compId}:${tchat.teamId}` && !tchat.loading) loadTeacherChat(tchat.teamId);
+  const muted = s.chatMutedTeams || [];
+  const team = comp.teams.find((t) => t.id === tchat.teamId);
+  const patch = (body, msg) => act(() => api('PATCH', `/teacher/competitions/${compId}`, body), msg);
+  const reassign = (teamId, taskId, userId) => act(() => post('/drivers', { teamId, taskId, userId: userId || null }), userId ? '已指派 Driver' : '已重新抽選 Driver');
+  return h('div',
+    h('div.card',
+      h('div.row',
+        h('h2', { style: { margin: 0 } }, '🚆 隨機 Driver'),
+        h('label', h('input', { type: 'checkbox', checked: !!s.randomDriver, onchange: (e) => patch({ randomDriver: e.target.checked }, e.target.checked ? '已開啟隨機 Driver' : '已關閉隨機 Driver（所有隊員都可輸入及提交）') }), '開啟（每一題由一名隊員輸入及提交）'),
+        h('label', h('input', { type: 'checkbox', checked: s.chatEnabled !== false, onchange: (e) => patch({ chatEnabled: e.target.checked }, e.target.checked ? '已開啟隊伍對話' : '已關閉全部隊伍對話') }), '隊伍對話')),
+      h('p.muted', '每一題開始時按公平輪換（每人輪到一次才重新洗牌，跳過未連線的學生）選出 Driver。答錯或短暫斷線都不會更換 Driver；Driver 離線超過 45 秒時這裏會提示，你可以重新抽選或指定。'),
+      !D.enabled ? h('p.notice.info', '隨機 Driver 未開啟：所有隊員都可以輸入及提交。') : null,
+      h('div.table-scroll', h('table',
+        h('thead', h('tr', h('th', '隊伍'), h('th', '目前題目'), h('th', 'Driver'), h('th', '連線'), h('th', '參與次數（已擔任 Driver 的題數）'), h('th', '操作'))),
+        h('tbody', comp.teams.map((t) => {
+          const td = D.teams[t.id] || {};
+          const pick = h('select', { 'aria-label': `${t.name} 指定 Driver` }, h('option', { value: '' }, '指定隊員…'), t.members.map((m) => h('option', { value: m.id }, m.name)));
+          return h('tr',
+            h('td', h('span.dot', { style: { background: t.color } }), ' ', t.name),
+            h('td.mono', td.current || '—'),
+            h('td', td.driver ? h('strong', td.driver.name) : h('span.muted', '—')),
+            h('td', offlineText(td.driver, D.graceMs)),
+            h('td', (td.members || []).map((m) => h(`span.pill${m.online ? '' : '.muted'}`, { style: { marginRight: '4px' }, title: m.online ? '在線' : '未連線' }, `${m.name} ${m.turns}`))),
+            h('td', D.enabled && td.current ? h('div.row', { style: { gap: '6px' } },
+              h('button.small', { type: 'button', onclick: () => { if (confirm(`為 ${t.name} 的 ${td.current} 重新抽選 Driver？已輸入的公式會保留。`)) reassign(t.id, td.current); } }, '🎲 重新抽選'),
+              pick, h('button.small', { type: 'button', onclick: () => { if (pick.value) reassign(t.id, td.current, pick.value); } }, '指派')) : null));
+        }))))),
+    h('div.grid2', { style: { marginTop: '14px' } },
+      h('div.card',
+        h('h3', { style: { marginTop: 0 } }, '指派紀錄'),
+        h('div.row', comp.teams.map((t) => h(`button.small${t.id === tchat.teamId ? '.primary' : ''}`, { type: 'button', onclick: () => { loadTeacherChat(t.id); } }, t.name))),
+        team ? (() => {
+          const td = D.teams[team.id] || {};
+          const tasks = Object.entries(td.tasks || {});
+          return h('div',
+            tasks.length ? h('table', { style: { marginTop: '8px' } }, h('thead', h('tr', h('th', '題目'), h('th', 'Driver'), h('th', '方式'))),
+              h('tbody', tasks.map(([tid, a]) => h('tr', h('td.mono', tid), h('td', a.name), h('td', BY_LABEL[a.by] || a.by))))) : h('p.muted', '尚未有指派。'),
+            (td.history || []).some((x) => x.by === 'teacher') ? h('details', h('summary', '老師更改紀錄'),
+              h('ul', (td.history || []).filter((x) => x.by === 'teacher').map((x) => h('li', `${fmtClock(x.at)}・${x.taskId}：${x.prevName || '—'} → ${x.name}${x.reason ? `（${x.reason}）` : ''}`)))) : null);
+        })() : null),
+      h('div.card',
+        h('div.row',
+          h('h3', { style: { margin: 0 } }, `💬 ${team?.name || ''} 隊伍對話（只限老師及該隊）`),
+          team ? h('label.right', h('input', { type: 'checkbox', checked: muted.includes(team.id), onchange: (e) => patch({ chatMutedTeams: e.target.checked ? [...muted, team.id] : muted.filter((x) => x !== team.id) }, e.target.checked ? `已暫停 ${team.name} 的對話` : `已恢復 ${team.name} 的對話`) }), '暫停此隊對話') : null),
+        h('div.tchat', tchat.loading && !tchat.messages.length ? h('p.muted', '載入中…') : tchat.messages.length ? tchat.messages.map((m) => h(`div.tchat-msg${m.deleted ? '.deleted' : ''}`,
+          h('div.muted', { style: { fontSize: '.8rem' } }, `${fmtClock(m.at)}・${m.name}${m.taskId ? `・${m.taskId}` : ''}`),
+          h('div', m.deleted ? h('em.muted', '（老師已刪除此訊息）') : m.text),
+          m.deleted ? null : h('button.small.ghost', { type: 'button', onclick: () => { if (confirm('刪除這則訊息？（原文會記錄於審計紀錄）')) act(() => post(`/chat/${m.id}/delete`), '已刪除訊息'); } }, '刪除'))) : h('p.muted', '此隊未有訊息。')))));
 }
 
 // ======================================================================= G. 題目及工作表（老師預覽、題目控制、重開）

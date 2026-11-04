@@ -3,11 +3,14 @@ import { SheetEditor } from './sheet-editor.js';
 import { GameSfx } from './sfx.js';
 import { Character, CHARACTERS, REACTIONS } from './characters.js';
 import { routeMap, pids, levelTransition } from './rail.js';
+import { TeamChat } from './team-chat.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
 let me = null;
 let editor = null;
+let chat = null; // 隊伍對話面板
+let lastDriverTask = null;
 let rulesSig = '';
 let wasDown = false;
 let viewPractice = null; // 正在做的練習（reopenId）
@@ -53,11 +56,13 @@ function connect() {
     cells: (d) => editor?.applyRemote(d),
     presence: (d) => editor?.applyPresence(d),
     sfx: (d) => sfx.handle(d),
+    chat: (d) => chat?.onEvent(d),
   }, (ok) => {
     $('conn').textContent = ok ? '● 已連線' : '重新連線中…';
     $('conn').className = `conn pill ${ok ? 'ok' : 'warn'}`;
     // 重新連線後重新載入工作表，避免錯過斷線期間隊友的修改
     if (ok && wasDown && editor?.cur) editor.open(editor.cur.sheet, editor.cur.layer, { keepSelection: true });
+    if (ok && wasDown) chat?.load(); // 補回斷線期間的訊息
     wasDown = !ok;
   });
 }
@@ -163,13 +168,57 @@ function render() {
   if (mode !== wantMode) {
     mode = wantMode;
     editor = null;
+    chat = null;
     if (wantMode === 'results') clear($('main'), h('div#results.wrap'));
-    else clear($('main'), h('div.play', h('div#panel.panel'), h('div#sheetbox.sheetbox')));
+    else {
+      clear($('main'), h('div.play', h('div.leftcol', h('div#panel.panel'), h('div#chatdock.chatdock')), h('div#sheetbox.sheetbox')));
+      chat = new TeamChat($('chatdock'), {
+        me: me.id,
+        taskContext: () => (viewLevel && activeTask[viewLevel]) || state.driver?.taskId || null,
+        canInsert: () => !state.driver?.enabled || !!state.driver?.driver?.isMe,
+        insert: (f) => { if (!editor) return; editor.beginEdit(f); },
+      });
+      chat.load();
+    }
   }
+  followDriverTask();
   renderRoute();
   if (mode === 'results') return renderResults();
   renderPanel();
   renderSheetBox();
+  chat?.setAllowed(state.chat, state.chat?.maxLen);
+}
+
+/** Random Driver：目前題目改變時，自動切換到該題 */
+function followDriverTask() {
+  const d = state.driver;
+  if (!d?.enabled || !d.taskId || d.taskId === lastDriverTask) return;
+  lastDriverTask = d.taskId;
+  const lv = (state.levelDetails || []).find((l) => l.tasks.some((t) => t.id === d.taskId));
+  if (lv) { activeTask[lv.level] = d.taskId; if (lv.phase === 'active') viewLevel = lv.level; }
+}
+
+const isDriverFor = (taskId) => !state.driver?.enabled || (state.driver.taskId === taskId && !!state.driver.driver?.isMe);
+
+function renderDriverBar() {
+  const bar = $('driverbar');
+  if (!bar) return;
+  const d = state.driver;
+  bar.hidden = !d?.enabled;
+  if (!d?.enabled) return;
+  const short = (id) => id?.split('-').at(-1);
+  if (!d.taskId || !d.driver) {
+    clear(bar, h('span', '🚆 隨機 Driver：現在沒有開放的題目。'));
+    bar.className = 'driverbar';
+    return;
+  }
+  const off = !d.driver.online && d.driver.offlineSince;
+  bar.className = `driverbar ${d.driver.isMe ? 'me' : 'other'}`;
+  clear(bar, d.driver.isMe
+    ? [h('strong', `🚆 你是 ${short(d.taskId)} 的 Driver`), h('span', '由你輸入公式及提交；隊友會在隊伍對話提出建議。答錯可以再試。')]
+    : [h('strong', `👀 Driver：${d.driver.name}`), h('span', `正在作答 ${short(d.taskId)}。你的工作表是唯讀的（可選取及複製）；在隊伍對話幫忙分析及提出公式。`),
+      off ? h('span.pill.warn', `${d.driver.name} 暫時離線，請等候或通知老師`) : null],
+    h('small.muted.right', `你已擔任 Driver ${d.myTurns} 題`));
 }
 
 function renderRoute() {
@@ -210,7 +259,7 @@ function renderSheetBox() {
   }
   if (!editor) {
     box.dataset.kind = 'builtin';
-    clear(box, h('div#editorroot', { style: { height: '100%' } }));
+    clear(box, h('div#driverbar.driverbar', { hidden: true }), h('div#editorroot.editorroot'));
     // 練習副本（可能屬於之前的劇集）使用練習專用的網址；伺服器檢查學生是否屬於該隊
     const route = (sheet, layer, suffix) => {
       const p = layer && layer !== 'main' ? practiceOf(layer) : null;
@@ -222,6 +271,13 @@ function renderSheetBox() {
       send: (sheet, layer, ops) => api('POST', route(sheet, layer, 'ops'), { layer, ops }),
       presence: (sheet, layer, a, editing) => api('POST', route(sheet, layer, 'presence'), { layer, a, editing }),
       onOpen: (cur) => { const next = cur.layer !== 'main' ? cur.layer : null; if (next !== viewPractice) { viewPractice = next; renderPanel(); } },
+      lockedReason: (a, t) => {
+        const d = state.driver;
+        if (!d?.enabled || !t || editor?.cur?.layer !== 'main' || !['active'].includes(t.state)) return null;
+        if (d.taskId !== t.id) return `隨機 Driver：現在作答的是 ${d.taskId || '—'}，${t.id} 稍後才開始。`;
+        if (!d.driver?.isMe) return `只有本題的 Driver（${d.driver?.name || '—'}）可以輸入。你可以在隊伍對話提出公式建議。`;
+        return null;
+      },
       onSaveState: (st) => { const el = $('savestate'); if (el) { el.textContent = st === 'saved' ? '' : st === 'saving' ? '儲存中…' : '⚠ 未儲存'; } },
     });
     window.__tyEditor = editor;
@@ -235,7 +291,8 @@ function renderSheetBox() {
     editor.setTabs(tabs, active ? { sheet: active.sheet, layer: 'main' } : null);
   }
   // 題目狀態（開放／鎖定／完成）或暫停改變：更新可編輯範圍
-  const sig = JSON.stringify([state.paused, levels.map((l) => [l.level, l.phase, l.tasks.map((t) => t.state)]), (state.practice || []).map((p) => [p.reopenId, p.closed])]);
+  renderDriverBar();
+  const sig = JSON.stringify([state.paused, levels.map((l) => [l.level, l.phase, l.tasks.map((t) => t.state)]), (state.practice || []).map((p) => [p.reopenId, p.closed]), state.driver?.taskId, state.driver?.driver?.id]);
   if (sig !== rulesSig) { const first = !rulesSig; rulesSig = sig; if (!first) editor.refreshRules(); }
 }
 
@@ -308,6 +365,11 @@ async function submitPracticeNow(p) {
 }
 
 function renderPanel() {
+  renderPanelInner();
+  chat?.refreshContext(); // 切換題目時，「本題」對話跟着切換
+}
+
+function renderPanelInner() {
   const panel = $('panel');
   if (!panel) return;
   if (viewPractice && practicePanel(panel)) return;
@@ -342,11 +404,12 @@ function renderPanel() {
     h('div.card',
       h('div.task-tabs', tasks.map((t) => h(`button.task-tab${t.id === task.id ? '.on' : ''}${t.best === t.points ? '.done' : ''}${t.latest && t.latest.status === 'REJECTED' ? '.bad' : ''}`, {
         type: 'button', onclick: () => { activeTask[lv.level] = t.id; renderPanel(); gotoTask(lv, t); },
-      }, t.state === 'locked' ? '🔒 ' : '', t.bonus ? '★ Bonus' : t.id.split('-').at(-1), t.best === t.points ? ' ✓' : ''))),
+        title: state.driver?.tasks?.[t.id] ? `Driver：${state.driver.tasks[t.id].name}` : '',
+      }, t.state === 'locked' ? '🔒 ' : '', state.driver?.enabled && state.driver.taskId === t.id ? '🚆 ' : '', t.bonus ? '★ Bonus' : t.id.split('-').at(-1), t.best === t.points ? ' ✓' : ''))),
       taskCard(lv, task, canSubmit && !blockedByCaptain),
       blockedByCaptain ? h('p.notice.warn', '老師設定了只由隊長提交；你可以協助檢查及分析。') : null),
     story ? h('div.card', { style: { padding: '10px' } }, story) : null,
-    lv.roles ? h('div.row', Object.values(lv.roles).map((r) => h(`span.pill${r.isMe ? '.info' : ''}`, `${r.label.split('（')[0]}：${r.name}${r.isMe ? '（你）' : ''}`))) : null,
+    lv.roles && !state.driver?.enabled ? h('div.row', Object.values(lv.roles).map((r) => h(`span.pill${r.isMe ? '.info' : ''}`, `${r.label.split('（')[0]}：${r.name}${r.isMe ? '（你）' : ''}`))) : null,
     practiceList(),
     hintCard(lv),
     scoreCard(lv),
@@ -401,16 +464,21 @@ function taskCard(lv, t, canSubmit) {
       h('p.notice.info', '老師稍後會開放這一題。開放前不能編輯或提交。'));
   }
   canSubmit = canSubmit && (t.state === 'active' || t.state === 'completed');
+  const drv = state.driver;
+  const driverName = drv?.enabled ? drv.tasks?.[t.id]?.name : null;
+  const notDriver = drv?.enabled && !isDriverFor(t.id);
+  if (notDriver) canSubmit = false;
   const latest = t.latest;
   const done = t.best === t.points;
   const mpState = (id) => (!latest?.markingPoints ? 'none' : latest.markingPoints.find((m) => m.id === id)?.passed ? 'pass' : 'fail');
   const statusPill = latest ? h(`span.pill.${latest.status === 'VERIFIED' ? 'ok' : ['RETRYABLE_ERROR', 'INTEGRITY_ERROR', 'DUPLICATE'].includes(latest.status) ? 'warn' : 'bad'}`, SUB_LABEL[latest.status] || latest.status) : null;
   return h(`div.task${done ? '.done' : ''}`, { style: { marginTop: '10px' }, id: `task-${t.id}` },
-    h('div.head', h('span.id', t.id), t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), TASK_STATE[t.state] ? h(`span.pill.${TASK_STATE[t.state][0]}`, TASK_STATE[t.state][1]) : null, t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
+    h('div.head', h('span.id', t.id), driverName ? h(`span.pill.${drv.tasks[t.id].isMe ? 'info' : ''}`, `🚆 Driver：${drv.tasks[t.id].isMe ? '你' : driverName}`) : null, t.bonus ? h('span.pill.warn', 'Bonus +50（非必答）') : null, h('span.pill', `${t.best}/${t.points} 評分點`), TASK_STATE[t.state] ? h(`span.pill.${TASK_STATE[t.state][0]}`, TASK_STATE[t.state][1]) : null, t.cancelled ? h('span.pill.warn', '老師已取消此題') : null, statusPill),
     h('div.task-instr', richText(t.instruction)),
     h('div.submit-row',
       h('button.primary.big', { type: 'button', disabled: !canSubmit || pending[t.id] || t.cancelled, onclick: () => submit(t.id) }, pending[t.id] ? '⏳ 提交中…' : done ? '✓ 已核實（可再提交）' : '🚆 檢查／提交'),
       editor ? h('button', { type: 'button', onclick: () => gotoTask(lv, t) }, `前往 ${t.cells.join('、')}`) : null),
+    notDriver && t.state === 'active' ? h('p.notice.info', { style: { margin: '6px 0' } }, drv.taskId === t.id ? `只有 Driver（${drv.driver?.name || '—'}）可以輸入及提交這一題。你可以在隊伍對話提出想法或公式。` : `隨機 Driver：請先完成目前的題目 ${drv.taskId || ''}，這一題稍後由新的 Driver 作答。`) : null,
     h('small.muted', latest ? `上次提交：${new Date(latest.at).toLocaleTimeString('zh-HK', { hour12: false })}・已批改 ${t.attempts} 次` : '提交時系統會讀取你們工作表的公式及計算結果，並以隱藏測試數據檢查。'),
     h('ul.mp', t.markingPoints.map((m) => h(`li.${done ? 'pass' : mpState(m.id)}`, `${m.label}（${m.max} 分）`))),
     latest?.message ? h(`div.notice.${latest.status === 'VERIFIED' ? 'ok' : 'warn'}`, latest.message) : null,
@@ -520,7 +588,9 @@ function teamCard() {
   return h('div', { style: { marginTop: '10px', textAlign: 'left' } },
     h('div.section-title', `${t.name} 隊員`),
     h('div.row', t.members.map((m) => h('span.pill', m.name, m.captain ? '（隊長）' : ''))),
-    h('p.muted', { style: { marginTop: '10px' } }, '每一關會輪流擔任 Driver（輸入公式）、Formula Detective（分析題目）、Checker（檢查結果）。'));
+    h('p.muted', { style: { marginTop: '10px' } }, state.driver?.enabled
+      ? '隨機 Driver：每一題隨機輪流由一名隊員輸入及提交，其他隊員一齊分析、在隊伍對話提出公式。每人都會輪到。'
+      : '每一關會輪流擔任 Driver（輸入公式）、Formula Detective（分析題目）、Checker（檢查結果）。'));
 }
 
 function renderResults() {

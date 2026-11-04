@@ -3,6 +3,8 @@
 // Student：只看到自己隊伍；任務內容只在該關開始後才提供；標準答案只在該關結束後的回顧顯示。
 // Teacher：全部。
 import { db } from './store.js';
+import { studentDriverView, teacherDriverView } from './drivers.js';
+import { chatAllowed, chatSummary, CHAT_MAX_LEN } from './chat.js';
 import { episodeOf } from './episodes/index.js';
 import { clock } from './clock.js';
 import { rankTeams, computeTeamScore, breakdownLines, RULES } from './scoring.js';
@@ -139,6 +141,9 @@ export function studentView(comp, user) {
     practice: practiceItemsFor(user),
     score: { total: score.total, baseTotal: score.baseTotal, combo: score.combo, manual: score.manual, completedLevels: score.completedLevels },
     bonusEnabled: comp.settings.bonusEnabled,
+    // 隨機 Driver 及隊伍對話（只給本隊；公開視圖及投影畫面沒有這些資料）
+    driver: studentDriverView(comp, team, user),
+    chat: { ...chatAllowed(comp, team), maxLen: CHAT_MAX_LEN },
   };
 }
 
@@ -213,6 +218,8 @@ export function teacherView(comp) {
     taskStates: Object.fromEntries(comp.teams.map((t) => [t.id, Object.fromEntries(ep.tasks.map((task) => { const st = teamTaskState(comp, t, task); return [task.id, st.reopen ? 'reopened' : st.state]; }))])),
     taskOverrides: comp.taskOverrides || {},
     reopens: comp.reopens || [],
+    drivers: teacherDriverView(comp),
+    chatSummary: chatSummary(comp),
     generation: comp.generation ? { ...comp.generation } : null,
     // 預檢表的數據摘要欄（每集不同）
     flagTable: comp.generation ? {
