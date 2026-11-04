@@ -364,10 +364,17 @@ export class SheetEditor {
     this.drawRefs(this.sel().single ? input : null);
     const t = this.taskOf.get(a);
     let lock = '';
-    if (this.answer.has(a)) lock = this.editable.has(a) ? `✏️ 作答格${t ? `（${t.id}）` : ''}` : `🔒 ${t ? `${t.id} ` : ''}${STATE_LABEL[t?.state] || '暫時不可編輯'}`;
+    if (this.answer.has(a)) lock = this.editable.has(a) ? `✏️ 作答格${t ? `（${t.id}）` : ''}` : `🔒 ${t ? `${t.id} ` : ''}${this.stateNote(t) || '暫時不可編輯'}`;
     else if (this.data.has(a)) lock = '🔒 原始數據（受保護）';
     this.lockEl.textContent = this.readOnly ? '👁 唯讀預覽' : lock;
     this.lockEl.className = `se-lock ${this.editable.has(a) ? 'open' : ''}`;
+  }
+
+  /** 題目狀態文字；開放作答但本人不可編輯（例如不是 Driver）時，由頁面提供說明 */
+  stateNote(t, a = this.anchorAddr()) {
+    if (!t) return '';
+    if (t.state === 'active' && !this.editable.has(a) && !this.payload?.paused) return this.opts.lockNote?.(t) || STATE_LABEL.active;
+    return STATE_LABEL[t.state] || '';
   }
 
   updateStatus() {
@@ -386,7 +393,7 @@ export class SheetEditor {
       parts.push(h('span', `已選取 ${s.spec}　`), n ? h('span', `總和 ${displayValue(sum)}　平均 ${displayValue(sum / n)}　`) : null, h('span', `計數 ${cnt}`));
     } else if (!parts.length) {
       const t = this.taskOf.get(a);
-      parts.push(h('span.muted', t ? `${a} 屬於 ${t.id}：${STATE_LABEL[t.state] || t.state}` : this.data.has(a) ? `${a}：原始數據（不可修改）` : a));
+      parts.push(h('span.muted', t ? `${a} 屬於 ${t.id}：${this.stateNote(t, a) || t.state}` : this.data.has(a) ? `${a}：原始數據（不可修改）` : a));
     }
     clear(this.status, parts);
   }
@@ -597,7 +604,12 @@ export class SheetEditor {
   explainLocked(a) {
     const t = this.taskOf.get(a);
     const custom = this.answer.has(a) && !this.payload?.paused ? this.opts.lockedReason?.(a, t) : null;
-    if (custom) { toast(custom, 'error'); return; }
+    if (custom) {
+      // 連續按鍵只提示一次
+      if (custom !== this.lastLockToast?.text || Date.now() - this.lastLockToast.at > 2500) toast(custom, 'error');
+      this.lastLockToast = { text: custom, at: Date.now() };
+      return;
+    }
     if (this.answer.has(a)) toast(`${a} 現在不可編輯：${t ? `${t.id} ${STATE_LABEL[t.state] || ''}` : ''}${this.payload?.paused ? '（比賽暫停中）' : ''}`, 'error');
     else toast(`${a} 是受保護的原始資料或說明，不可修改。黃色儲存格才是作答格。`, 'error');
   }

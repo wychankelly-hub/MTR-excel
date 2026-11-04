@@ -386,7 +386,7 @@ tr.on td { background: var(--info-bg); }
 .driverbar.me { background: var(--ok-bg); border-color: var(--ok); }
 .driverbar.other { background: var(--info-bg); border-color: var(--info); }
 .driverbar .right { margin-left: auto; }
-.chatdock { flex: none; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 2px 6px rgba(0,0,0,.06); height: 260px; overflow: hidden; }
+.chatdock { flex: none; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 2px 6px rgba(0,0,0,.06); height: 230px; overflow: hidden; }
 .chatdock.collapsed { height: auto; }
 .chatdock.collapsed .chat-body { display: none; }
 .chat-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); }

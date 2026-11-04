@@ -112,6 +112,7 @@ function renderAll() {
   const opt = comp && [...$('comp-pick').options].find((o) => o.value === comp.id);
   if (opt) opt.textContent = `${comp.classCode ? `${comp.classCode}｜` : ''}${comp.title}（${STATUS_LABEL[comp.status] || comp.status}${comp.adapter === 'google' ? '・Google Sheets' : ''}）`;
   $('status').textContent = comp ? (STATUS_LABEL[comp.status] || comp.status) : '未選擇比賽';
+  if ($('tsub')) $('tsub').textContent = comp?.episodeTitle ? `定過抬油：站長爭奪戰・${comp.episodeTitle}` : '定過抬油：站長爭奪戰';
   clear($('banner'), comp ? demoBanner(comp.demo) : null, comp?.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0 } }, `⏸ 比賽暫停中：${comp.pauseReason || ''}`) : null,
     comp && comp.health?.sheets !== 'Ready' && comp.adapter === 'google' ? h('div.notice.bad', { style: { margin: 0, borderRadius: 0 } }, `Google Sheets 狀態：${comp.health.sheets}${comp.health.lastSheetsError ? `（${comp.health.lastSheetsError.message}）` : ''}`) : null);
   clear($('tabs'), TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', className: tab === k ? 'active' : '', disabled: !comp && !['setup', 'audio', 'chars', 'system'].includes(k), onclick: () => { tab = k; history.replaceState(null, '', `#${k}`); renderAll(); } }, label)));

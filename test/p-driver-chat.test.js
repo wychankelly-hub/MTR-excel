@@ -350,10 +350,18 @@ test('練習（重開）不受 Driver 限制，亦不計分；關閉 Random Driv
   await tp(`/reopen/${rid}/close`);
   // 關閉 Random Driver
   await T('PATCH', `/teacher/competitions/${id}`, { randomDriver: false });
-  const cur = E2.levelByNum[2].tasks.map((t) => t.id).find((tid) => !(comp().submissions.some((s) => s.teamId === 't1' && s.taskId === tid && s.status === 'VERIFIED' && s.earned === E2.taskById[tid].points)));
-  if (cur) {
-    const anyone = await write(S[nonDriver], 'E2L2_Roster', correctInputs(cur));
-    assert.equal(anyone.rejected.length, 0, '關閉後任何隊員都可以輸入');
+  // 第 4 關（未作答）：關閉後，任何隊員都可以輸入不同題目
+  await tp('/levels/3/end');
+  assert.equal((await tp('/levels/4/start')).status, 200);
+  const [t1, t2] = E2.levelByNum[4].tasks;
+  for (const [k, t] of [['a', t1], ['b', t2]]) {
+    const w2 = await write(S[k], 'E2L4_Alibi', correctInputs(t.id));
+    assert.equal(w2.rejected.length, 0, `關閉後 ${k} 可以輸入 ${t.id}：${JSON.stringify(w2.rejected[0])}`);
   }
+  // 重新開啟：目前題目再次只限該題的 Driver
   await T('PATCH', `/teacher/competitions/${id}`, { randomDriver: true });
+  const d = (await view()).drivers.teams.t1;
+  assert.equal(d.current, t1.id);
+  const nd = ['a', 'b', 'c'].find((k) => userIdOf(names[k]) !== d.driver.id);
+  assert.equal((await write(S[nd], 'E2L4_Alibi', { E2: '=0' })).rejected[0]?.code, 'NOT_DRIVER');
 });

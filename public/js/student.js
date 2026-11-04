@@ -278,6 +278,12 @@ function renderSheetBox() {
         if (!d.driver?.isMe) return `只有本題的 Driver（${d.driver?.name || '—'}）可以輸入。你可以在隊伍對話提出公式建議。`;
         return null;
       },
+      lockNote: (t) => {
+        const d = state.driver;
+        if (!d?.enabled || editor?.cur?.layer !== 'main') return null;
+        if (d.taskId !== t.id) return '稍後開始（隨機 Driver）';
+        return d.driver?.isMe ? null : `只限 Driver（${d.driver?.name || '—'}）`;
+      },
       onSaveState: (st) => { const el = $('savestate'); if (el) { el.textContent = st === 'saved' ? '' : st === 'saving' ? '儲存中…' : '⚠ 未儲存'; } },
     });
     window.__tyEditor = editor;
