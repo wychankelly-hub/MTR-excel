@@ -162,15 +162,15 @@ const VALIDATORS = {
   // L1 排序及篩選
   'E3-L1-T1'(g) {
     g.award('a', checkSort(g, [{ col: 'H', dir: 'desc' }], 'WaitMin 由大至小'));
-    const b2 = formulaAnswer(g, 'J2');
-    const b3 = formulaAnswer(g, 'J3');
+    const b2 = formulaAnswer(g, 'B123');
+    const b3 = formulaAnswer(g, 'B124');
     g.award('b', b2 && b3);
   },
   'E3-L1-T2'(g) {
     g.award('a', checkSort(g, [{ col: 'E', dir: 'asc' }, { col: 'F', dir: 'desc' }, { col: 'B', dir: 'asc' }], 'Category ↑、Severity ↓、Time ↑'));
-    const info = g.info('J4');
-    if (info.kind === 'constant' && typeof info.value === 'string') { g.err('HARDCODED_TEXT', 'J4'); g.award('b', false); return; }
-    g.award('b', formulaAnswer(g, 'J4', { needFns: ['XLOOKUP', 'INDEX', 'MATCH'] }));
+    const info = g.info('B125');
+    if (info.kind === 'constant' && typeof info.value === 'string') { g.err('HARDCODED_TEXT', 'B125'); g.award('b', false); return; }
+    g.award('b', formulaAnswer(g, 'B125', { needFns: ['XLOOKUP', 'INDEX', 'MATCH'] }));
   },
   'E3-L1-T3'(g) {
     const f = g.meta(META.FILTER);
@@ -202,7 +202,7 @@ const VALIDATORS = {
       }
     }
     g.award('a', a);
-    for (const [cell, mp, total] of [['J5', 'b', 120], ['J6', 'c', null]]) {
+    for (const [cell, mp, total] of [['B126', 'b', 120], ['B127', 'c', null]]) {
       const info = g.info(cell);
       if (!g.checkBasic(cell)) { g.award(mp, false); continue; }
       const ok = g.ok('team', cell) && g.ok('hidden', cell);

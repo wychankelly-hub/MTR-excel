@@ -78,6 +78,7 @@ function renderSfxControls(st) {
 
 function setState(s) {
   state = s;
+  window.__tyState = s; // 方便測試及除錯（只有本隊資料）
   serverClock.sync(s.serverNow);
   if (viewPractice && !practiceOf(viewPractice)) { viewPractice = null; if (editor?.cur?.layer !== 'main') editor.tabsKey = null; }
   render();

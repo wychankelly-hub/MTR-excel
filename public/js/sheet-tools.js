@@ -63,6 +63,7 @@ export class SheetTools {
   // ---------------------------------------------------------------- 介面
   attach() {
     const T = this.T;
+    this.ed.status.dataset.filter = '';
     const btn = (label, title, fn) => h('button.small', { type: 'button', title, onmousedown: (e) => e.preventDefault(), onclick: fn }, label);
     if (this.group) this.group.remove();
     const spacer = this.ed.toolbar.querySelector('.se-spacer');
@@ -81,6 +82,7 @@ export class SheetTools {
   }
 
   detach() {
+    this.ed.status.dataset.filter = '';
     this.group?.remove();
     this.drawer?.remove();
     this.filterLayer?.remove();

@@ -47,6 +47,8 @@ test('隨機 Driver 及隊伍對話：角色顯示、唯讀、對話填入公式
     await T.waitForSelector('#comp-pick option', { state: 'attached' });
     const rd = T.locator('label:has-text("隨機 Driver") input[type=checkbox]').first();
     assert.equal(await rd.isChecked(), true, '新比賽預設開啟隨機 Driver');
+    await T.locator('label:has-text("劇集") select').selectOption('E2');
+    await T.waitForFunction(() => [...document.querySelectorAll('input')].some((i) => i.value.endsWith('E2')));
     await T.click('button:has-text("建立比賽")');
     await T.waitForSelector('text=Dataset Preflight');
     const compId = await T.evaluate(() => document.getElementById('comp-pick').value);

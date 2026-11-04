@@ -42,8 +42,9 @@ test('第二集：內置工作表作答（FIND／MID）、提交及老師預覽'
     await T.click('#demo-teacher button');
     await T.waitForURL('**/teacher');
     await T.waitForSelector('#comp-pick option', { state: 'attached' });
-    // 預設劇集是第二集
-    assert.equal(await T.locator('label:has-text("劇集") select').inputValue(), 'E2');
+    // 預設是最新一集；此流程測試第二集
+    await T.locator('label:has-text("劇集") select').selectOption('E2');
+    await T.waitForFunction(() => [...document.querySelectorAll('input')].some((i) => i.value.endsWith('E2')));
     await T.click('button:has-text("建立比賽")');
     await T.waitForSelector('text=Dataset Preflight');
     await T.click('button:has-text("生成數據")');

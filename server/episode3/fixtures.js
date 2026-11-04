@@ -36,9 +36,9 @@ export function correctInputs(taskId, dataset = null) {
 export function equivalentInputs(taskId, dataset = null) {
   const base = correctInputs(taskId, dataset);
   switch (taskId) {
-    case 'E3-L1-T1': return { ...base, J2: '=INDEX(A2:A121,1)', J3: '=index(c2:c121, 3)', '!SORT': { ops: [{ keys: [{ col: 'B', dir: 'asc' }] }, { keys: [{ col: 'H', dir: 'desc' }] }] } };
-    case 'E3-L1-T2': return { ...base, J4: '=INDEX(A2:A121,MATCH("DATA",E2:E121,0))', '!SORT': { ops: [{ keys: [{ col: 'H', dir: 'desc' }] }, { keys: [{ col: 'B', dir: 'asc' }] }, { keys: [{ col: 'F', dir: 'desc' }] }, { keys: [{ col: 'E', dir: 'asc' }] }] } };
-    case 'E3-L1-T3': return { ...base, J5: '=COUNTIFS(G2:G121,"UNCLE-WONG",E2:E121,"DATA")', J6: '=SUMIFS(H2:H121,G2:G121,"UNCLE-WONG",E2:E121,"DATA")', '!FILTER': { crit: { G: { op: '=', value: 'UNCLE-WONG' }, E: { op: 'begins', value: 'DAT' } } } };
+    case 'E3-L1-T1': return { ...base, B123: '=INDEX(A2:A121,1)', B124: '=index(c2:c121, 3)', '!SORT': { ops: [{ keys: [{ col: 'B', dir: 'asc' }] }, { keys: [{ col: 'H', dir: 'desc' }] }] } };
+    case 'E3-L1-T2': return { ...base, B125: '=INDEX(A2:A121,MATCH("DATA",E2:E121,0))', '!SORT': { ops: [{ keys: [{ col: 'H', dir: 'desc' }] }, { keys: [{ col: 'B', dir: 'asc' }] }, { keys: [{ col: 'F', dir: 'desc' }] }, { keys: [{ col: 'E', dir: 'asc' }] }] } };
+    case 'E3-L1-T3': return { ...base, B126: '=COUNTIFS(G2:G121,"UNCLE-WONG",E2:E121,"DATA")', B127: '=SUMIFS(H2:H121,G2:G121,"UNCLE-WONG",E2:E121,"DATA")', '!FILTER': { crit: { G: { op: '=', value: 'UNCLE-WONG' }, E: { op: 'begins', value: 'DAT' } } } };
     case 'E3-L2-T1': return fill('B', 2, 41, (r) => `=E3L2_Timetable!$B${r}`);
     case 'E3-L2-T2': return fill('C', 2, 41, (r) => `=xlookup(A${r},E3L2_Log!A$2:A$41,E3L2_Log!B$2:B$41,"MISSING")`);
     case 'E3-L2-T3': return fill('D', 2, 41, (r) => `=IF(C${r}="MISSING","MISSING",IF(C${r}-B${r}<=E3L2_Timetable!$F$2,"OK","LATE"))`);
@@ -70,17 +70,17 @@ export function wrongCases(taskId, dataset) {
     case 'E3-L1-T1': return [
       { name: '只排序 WaitMin 一欄（資料列被拆散）', inputs: { ...base, '!SORT': { ops: [{ keys: [{ col: 'H', dir: 'desc' }], cols: ['H'] }] } }, maxEarned: 0, codes: ['ROWS_BROKEN'] },
       { name: '由小至大排序', inputs: { ...base, '!SORT': { ops: [{ keys: [{ col: 'H', dir: 'asc' }] }] } }, maxEarned: 0, codes: ['SORT_DIRECTION'] },
-      { name: '直接輸入答案', inputs: { ...base, J2: ref(1, taskId).J2, J3: ref(1, taskId).J3 }, maxEarned: 1, codes: ['FORMULA_REQUIRED'] },
+      { name: '直接輸入答案', inputs: { ...base, B123: ref(1, taskId).B123, B124: ref(1, taskId).B124 }, maxEarned: 1, codes: ['FORMULA_REQUIRED'] },
       { name: '沒有排序', inputs: { ...base, '!SORT': { ops: [] } }, maxEarned: 0, codes: ['NOT_SORTED'] },
     ];
     case 'E3-L1-T2': return [
       { name: '只按 Category 排序', inputs: { ...base, '!SORT': { ops: [{ keys: [{ col: 'E', dir: 'asc' }] }] } }, maxEarned: 1, codes: ['SORT_LEVELS'] },
       { name: '逐次排序的次序相反', inputs: { ...base, '!SORT': { ops: [{ keys: [{ col: 'E', dir: 'asc' }] }, { keys: [{ col: 'F', dir: 'desc' }] }, { keys: [{ col: 'B', dir: 'asc' }] }] } }, maxEarned: 1, codes: ['SORT_KEY_WRONG'] },
-      { name: '直接輸入編號', inputs: { ...base, J4: ref(1, taskId).J4 }, maxEarned: 1, codes: ['HARDCODED_TEXT'] },
+      { name: '直接輸入編號', inputs: { ...base, B125: ref(1, taskId).B125 }, maxEarned: 1, codes: ['HARDCODED_TEXT'] },
     ];
     case 'E3-L1-T3': return [
       { name: '只篩選 Caller', inputs: { ...base, '!FILTER': { crit: { G: { values: ['UNCLE-WONG'] } } } }, maxEarned: 0, codes: ['FILTER_ONE_CONDITION'] },
-      { name: '用 COUNTA／SUM（計算了隱藏列）', inputs: { ...base, J5: '=COUNTA(A2:A121)', J6: '=SUM(H2:H121)' }, maxEarned: 1, codes: ['SUBTOTAL_NEEDED'] },
+      { name: '用 COUNTA／SUM（計算了隱藏列）', inputs: { ...base, B126: '=COUNTA(A2:A121)', B127: '=SUM(H2:H121)' }, maxEarned: 1, codes: ['SUBTOTAL_NEEDED'] },
       { name: '逐一勾選投訴編號', inputs: (() => { const wb = buildLevelWorkbook(dataset.levels[1], 1, { '!SORT': T2SORT }); const ids = []; for (let r = 2; r <= 121; r++) if (wb.getValue('E3L1_Complaints', `G${r}`) === 'UNCLE-WONG' && wb.getValue('E3L1_Complaints', `E${r}`) === 'DATA') ids.push(wb.getValue('E3L1_Complaints', `A${r}`)); return { ...base, '!FILTER': { crit: { A: { values: ids } } } }; })(), maxEarned: 0, codes: ['FILTER_HARDCODED'] },
       { name: '沒有篩選', inputs: { ...base, '!FILTER': { crit: {} } }, maxEarned: 0, codes: ['NOT_FILTERED'] },
     ];

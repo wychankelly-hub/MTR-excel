@@ -21,7 +21,7 @@ const minuteToHHMM = (m) => Math.floor(m / 60) * 100 + (m % 60);
 
 function genL1(rng, { stations = STATIONS, uncle = 'UNCLE-WONG', prefix = 'C' } = {}) {
   const data = { A1: 'ComplaintID', B1: 'Time', C1: 'Station', D1: 'Line', E1: 'Category', F1: 'Severity', G1: 'Caller', H1: 'WaitMin' };
-  data.I2 = 'LongestID'; data.I3 = 'ThirdStation'; data.I4 = 'TopDataID'; data.I5 = 'UncleDataCount'; data.I6 = 'UncleDataMinutes';
+  data.A123 = 'LongestID'; data.A124 = 'ThirdStation'; data.A125 = 'TopDataID'; data.A126 = 'UncleDataCount'; data.A127 = 'UncleDataMinutes';
   // 時間（分鐘）及等候分鐘各不相同：排序結果唯一
   const minutes = rng.uniqueInts(120, 6 * 60, 23 * 60 + 50).sort((x, y) => x - y);
   const waits = rng.uniqueInts(120, 1, 180);
@@ -195,12 +195,12 @@ function levelProblems(n, level, ref) {
   for (const [a, v] of Object.entries(ref)) if (isError(v)) problems.push(`L${n} ${a} 參考答案出現錯誤值 ${v.code}`);
   const d = level.data;
   if (n === 1) {
-    if (ref.J5 < 4 || ref.J5 > 7) problems.push('L1 阿叔的 DATA 投訴數目不合適');
+    if (ref.B126 < 4 || ref.B126 > 7) problems.push('L1 阿叔的 DATA 投訴數目不合適');
     // 只篩選一個條件的結果必須不同
     let dataN = 0; let uncleN = 0;
     for (let r = 2; r <= 121; r++) { if (d[`E${r}`] === 'DATA') dataN++; if (d[`G${r}`] === 'UNCLE-WONG' || d[`G${r}`] === level.params.uncle) uncleN++; }
-    if (dataN <= ref.J5 || uncleN <= ref.J5) problems.push('L1 單一條件篩選與兩個條件的結果相同');
-    if (d.A2 === ref.J2) problems.push('L1 等候最久的投訴本來已在第一列');
+    if (dataN <= ref.B126 || uncleN <= ref.B126) problems.push('L1 單一條件篩選與兩個條件的結果相同');
+    if (d.A2 === ref.B123) problems.push('L1 等候最久的投訴本來已在第一列');
   }
   if (n === 2) {
     if (ref.H2 < 3) problems.push('L2 消失的列車太少');
@@ -294,7 +294,7 @@ function genTeamLevels(teamSeed) {
 function crossTeamProblems(cand, prev) {
   const problems = [];
   for (const p of prev) {
-    if (cand.ref[1].J2 === p.ref[1].J2 && cand.levels[1].data.H2 === p.levels[1].data.H2) problems.push(`L1 與 ${p.teamKey} 太相似`);
+    if (cand.ref[1].B123 === p.ref[1].B123 && cand.levels[1].data.H2 === p.levels[1].data.H2) problems.push(`L1 與 ${p.teamKey} 太相似`);
     if (cand.levels[5].data.B2 === p.levels[5].data.B2 && cand.levels[5].params.minLock === p.levels[5].params.minLock) problems.push(`L5 與 ${p.teamKey} 太相似`);
   }
   return problems;
@@ -329,7 +329,7 @@ export function generateCompetitionDatasets(competitionSeed, teamKeys) {
 
 function difficultyFlags(ds) {
   return {
-    L1_uncleData: ds.ref[1].J5,
+    L1_uncleData: ds.ref[1].B126,
     L2_missing: ds.ref[2].H2,
     L2_late: ds.ref[2].H3,
     L3_spike: `${ds.ref[3].G2}（×${ds.ref[3].G3}）`,
