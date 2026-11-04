@@ -52,7 +52,8 @@ function checkSort(g, keys, keyLabel) {
   const sort = g.meta(META.SORT);
   if (!sort?.ops?.length) { g.err('NOT_SORTED', g.task.focus); return false; }
   for (const kind of ['team', 'hidden']) {
-    const orig = tableRows((c, r) => buildLevelWorkbook(g.levelData(kind), g.level, {}).valueAt(g.lv.sheet, c, r), table);
+    const base = buildLevelWorkbook(g.levelData(kind), g.level, {});
+    const orig = tableRows((c, r) => base.valueAt(g.lv.sheet, c, r), table);
     const now = tableRows((c, r) => g.get(kind, c, r), table);
     if (!sameRows(orig, now)) { g.err('ROWS_BROKEN', table); return false; }
     if (!isSortedBy(now, keys.map((k) => ({ c: col(k.col), dir: k.dir })))) {
@@ -357,7 +358,7 @@ const VALIDATORS = {
       const { ast, fns } = g.info('E2');
       const refs = collectCellRefs(ast).filter((r) => !r.sheet && r.col === 2 && (r.row === 2 || r.row === 3));
       if (!fns.has('IF') || !fns.has('AND')) g.err('IF_AND_REQUIRED', 'E2');
-      else if (refs.length < 2) g.err('WINDOW_REFS', 'E2');
+      else if (!refs.some((r) => r.row === 2) || !refs.some((r) => r.row === 3)) g.err('WINDOW_REFS', 'E2');
       else if (refs.some((r) => !r.rowAbs)) g.err('LOCK_NOT_FIXED', 'E2');
       else if (!collectCellRefs(ast).some((r) => r.sheet === 'E3L5_EditLog' && r.col === 3)) g.err('COMPUTER_MISSING', 'E2');
       else a = true;
@@ -367,7 +368,8 @@ const VALIDATORS = {
     const rows = rowsOf('E', 2, 61);
     if (a) {
       outer: for (const kind of ['team', 'hidden']) {
-        for (const lock of [5, 30, 12]) {
+        // 包括「最後一個貓咪痕跡剛好在 B2+B3」的情況，找出用了 <= 的公式
+        for (const lock of [5, 30, 12, g.levelData(kind).params.minLock - 1]) {
           const mine = g.variant(kind, { B3: lock });
           const ref = g.variant(kind, { B3: lock }, { reference: true });
           for (const x of rows) {

@@ -5,6 +5,17 @@ import { addr as mkAddr, parseAddr } from './refs.js';
 import { FUNCTIONS } from './functions.js';
 import { ErrorValue, isError, isRange, toNumber, toText, toBool, compare } from './values.js';
 
+// 公式解析快取：同一條公式（例如批改時重建的參考公式）只解析一次；AST 不會被修改，可以共用
+const PARSE_CACHE = new Map();
+function parseCached(input) {
+  let ast = PARSE_CACHE.get(input);
+  if (ast) return ast;
+  ast = parseFormula(input);
+  if (PARSE_CACHE.size > 50000) PARSE_CACHE.clear();
+  PARSE_CACHE.set(input, ast);
+  return ast;
+}
+
 export function isFormulaInput(input) {
   return typeof input === 'string' && input.startsWith('=') && input.length > 1;
 }
@@ -72,7 +83,7 @@ export class Workbook {
     if (input === null || input === undefined || input === '') { sh.cells.delete(key); return; }
     const cell = { input };
     if (isFormulaInput(input)) {
-      try { cell.ast = parseFormula(input); } catch (e) { cell.parseError = e; }
+      try { cell.ast = parseCached(input); } catch (e) { cell.parseError = e; }
     }
     sh.cells.set(key, cell);
   }
