@@ -10,7 +10,9 @@ import { parseFormula } from '/engine/parser.js';
 import { shiftAst, toFormulaString } from '/engine/ast.js';
 import { isError, formatNumber } from '/engine/values.js';
 import { FUNCTION_HELP, SUPPORTED_FUNCTIONS } from '/engine/functions.js';
+import { loadLevelIntoWorkbook, applySorts, isMetaKey, parseRange } from '/engine/analysis.js';
 import { h, clear, toast } from './common.js';
+import { SheetTools } from './sheet-tools.js';
 
 const colName = (n) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 const colIdx = (s) => [...s.toUpperCase()].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
@@ -46,6 +48,7 @@ function shiftFormula(input, dr, dc) {
 
 function inputText(i) {
   if (i === null || i === undefined) return '';
+  if (typeof i === 'object') return JSON.stringify(i); // 分析設定（排序、篩選、圖表…）
   if (i === true) return 'TRUE';
   if (i === false) return 'FALSE';
   return String(i);
@@ -124,7 +127,7 @@ export class SheetEditor {
       this.toolbar,
       h('div.se-fx', this.nameBox, h('span.se-fxlabel', 'fx'), h('div.se-fxbox', this.fx, this.acEl), this.lockEl),
       this.hintEl,
-      this.scroller,
+      this.mainRow = h('div.se-main', this.scroller),
       this.status,
       this.sink));
     this.setSave('saved');
@@ -158,6 +161,8 @@ export class SheetEditor {
     [...this.tabsEl.children].forEach((b, i) => b.classList.toggle('on', this.tabs[i] && this.tabs[i].sheet === sheet && (this.tabs[i].layer || 'main') === this.cur.layer));
     this.rebuildWorkbook();
     this.renderGrid();
+    // 第三集的分析工具（排序、篩選、圖表、樞紐分析表、分析藍本、目標搜尋）
+    if (p.levelInfo?.tools && !p.readOnlyData) { if (!this.tools) this.tools = new SheetTools(this); this.tools.attach(); } else this.tools?.detach();
     if (!keepSelection || switching) {
       const first = (p.editable || [])[0] || (p.answer || [])[0]?.split(':')[0] || 'A1';
       const fp = P(first) || { c: 1, r: 1 };
@@ -189,8 +194,15 @@ export class SheetEditor {
     } catch { /* 下次再試 */ }
   }
 
+  /** 目前的分析設定（已確認＋未送出的修改） */
+  metaValue(key) {
+    const src = this.payload?.readOnlyData ? this.payload.primaryCells?.[key]?.i : this.inputOf(key);
+    return src ?? null;
+  }
+
   rebuildWorkbook() {
     const p = this.payload;
+    if (p.levelInfo) return this.rebuildLevelWorkbook();
     const wb = new Workbook();
     wb.addSheet(this.cur.sheet, p.maxRow, p.maxCol);
     for (const [a, v] of this.data) wb.setInput(this.cur.sheet, a, v);
@@ -199,6 +211,23 @@ export class SheetEditor {
       if (i !== null && i !== undefined && !this.data.has(a)) wb.setInput(this.cur.sheet, a, i);
     }
     this.wb = wb;
+  }
+
+  /** 第三集：一關有多張工作表（跨工作表參照）及排序、篩選設定 */
+  rebuildLevelWorkbook() {
+    const p = this.payload;
+    const L = p.levelInfo;
+    const lv = { sheet: L.sheet, maxRow: L.maxRow, maxCol: L.maxCol, tools: L.tools, extraSheets: L.extraSheets };
+    const inputs = {}; const meta = {};
+    const entries = p.readOnlyData ? Object.entries(p.primaryCells || {}).map(([a, c]) => [a, c.i]) : [...new Set([...this.server.keys(), ...this.pending.keys()])].map((a) => [a, this.inputOf(a)]);
+    for (const [a, i] of entries) { if (i === null || i === undefined) continue; if (isMetaKey(a)) meta[a] = i; else inputs[a] = i; }
+    const wb = new Workbook();
+    loadLevelIntoWorkbook(wb, lv, { data: L.data, extra: L.extra }, inputs, meta);
+    this.wb = wb;
+    // 顯示用的原始數據（已按排序重排）
+    const shown = p.readOnlyData ? L.extra[this.cur.sheet] || {} : (L.tools?.table ? applySorts(L.data, L.tools.table, meta['!SORT']) : L.data);
+    this.data = new Map(Object.entries(shown));
+    this.hidden = wb.hiddenRows?.get(this.cur.sheet) || new Set();
   }
 
   inputOf(a) {
@@ -225,6 +254,7 @@ export class SheetEditor {
       }
       rows.push(h('tr', cells));
     }
+    this.trs = rows;
     // 欄寬按原始數據的長度調整（每欄 84–220 像素）
     const widths = Array.from({ length: p.maxCol }, () => 84);
     for (const [a, v] of this.data) {
@@ -257,6 +287,9 @@ export class SheetEditor {
   refreshAll() {
     if (!this.table) return;
     this.wb.recalc();
+    // 篩選：隱藏不符合條件的列（數據沒有被刪除）
+    const hidden = this.hidden || new Set();
+    this.trs?.forEach((tr, i) => { tr.style.display = hidden.has(i + 1) ? 'none' : ''; tr.firstChild?.classList.toggle('filtered', hidden.size > 0); });
     for (const [a, td] of this.tds) this.paintCell(a, td);
     this.updateSelection();
     this.drawPresence();
@@ -279,6 +312,16 @@ export class SheetEditor {
     td.className = cls.join(' ');
     td.textContent = text;
     td.title = isError(v) ? `${v.code}：${v.detail || ''}` : isFormula(input) ? input : '';
+  }
+
+  /** 修改後更新畫面：排序／篩選設定或篩選範圍內的數據改變時，重新建立整張工作表 */
+  onCellsChanged(addrs) {
+    const table = this.payload?.levelInfo?.tools?.table;
+    if (this.payload?.levelInfo && (addrs.some(isMetaKey) || (table && this.hidden?.size))) {
+      this.rebuildLevelWorkbook();
+      this.refreshAll();
+    } else this.changedCells(addrs);
+    this.tools?.refresh();
   }
 
   changedCells(addrs) {
@@ -395,6 +438,7 @@ export class SheetEditor {
       const t = this.taskOf.get(a);
       parts.push(h('span.muted', t ? `${a} 屬於 ${t.id}：${this.stateNote(t, a) || t.state}` : this.data.has(a) ? `${a}：原始數據（不可修改）` : a));
     }
+    if (this.status.dataset.filter) parts.push(h('span.se-filtered', `　🔍 ${this.status.dataset.filter}`));
     clear(this.status, parts);
   }
 
@@ -435,6 +479,7 @@ export class SheetEditor {
   move(dr, dc, extend = false) {
     const p = extend ? this.focus : this.anchor;
     const np = { c: Math.min(this.payload.maxCol, Math.max(1, p.c + dc)), r: Math.min(this.payload.maxRow, Math.max(1, p.r + dr)) };
+    while (dr && this.hidden?.has(np.r) && np.r > 1 && np.r < this.payload.maxRow) np.r += Math.sign(dr); // 跳過被篩選隱藏的列
     if (extend) this.focus = np; else { this.anchor = np; this.focus = { ...np }; }
     this.updateSelection();
   }
@@ -789,10 +834,10 @@ export class SheetEditor {
     for (const op of allowed) {
       const prev = this.pending.get(op.a);
       this.pending.set(op.a, { i: op.i, base: prev ? prev.base : (this.server.get(op.a)?.v ?? 0), sent: false });
-      this.wb.setInput(this.cur.sheet, op.a, op.i);
+      if (!isMetaKey(op.a)) this.wb.setInput(this.cur.sheet, op.a, op.i);
     }
     if (record) { this.undoStack.push(allowed.map(({ a, i, before }) => ({ a, before, after: i }))); if (this.undoStack.length > 100) this.undoStack.shift(); this.redoStack = []; }
-    this.changedCells(allowed.map((x) => x.a));
+    this.onCellsChanged(allowed.map((x) => x.a));
     this.updateSelection(false);
     this.scheduleSend();
   }
@@ -975,8 +1020,8 @@ export class SheetEditor {
       toast(`${res.rejected.map((x) => x.a).slice(0, 4).join('、')} 現在不可修改（題目已鎖定或受保護）。`, 'error', 6000);
       this.refreshRules();
     }
-    for (const a of touched) this.wb.setInput(this.cur.sheet, a, this.data.has(a) ? this.data.get(a) : this.inputOf(a));
-    this.changedCells(touched);
+    for (const a of touched) if (!isMetaKey(a)) this.wb.setInput(this.cur.sheet, a, this.data.has(a) ? this.data.get(a) : this.inputOf(a));
+    this.onCellsChanged(touched);
     if (this.resend || [...this.pending.values()].some((p) => !p.sent)) { this.resend = false; this.sendNow(); return; }
     this.setSave(this.pending.size ? 'saving' : 'saved');
   }
@@ -993,8 +1038,8 @@ export class SheetEditor {
       if (this.editing?.a === op.a && op.by !== this.opts.me) toast(`${msg.by?.name || '隊友'} 剛修改了你正在編輯的 ${op.a}。`, 'error');
     }
     if (!touched.length) return;
-    for (const a of touched) this.wb.setInput(this.cur.sheet, a, this.inputOf(a));
-    this.changedCells(touched);
+    for (const a of touched) if (!isMetaKey(a)) this.wb.setInput(this.cur.sheet, a, this.inputOf(a));
+    this.onCellsChanged(touched);
     for (const a of touched) { const td = this.tds.get(a); td?.classList.add('flash'); setTimeout(() => td?.classList.remove('flash'), 900); }
     if (!this.editing) this.updateFormulaBar();
     this.updateStatus();

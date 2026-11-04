@@ -417,3 +417,41 @@ tr.on td { background: var(--info-bg); }
 .tchat-msg > button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .tchat-msg.deleted { opacity: .7; }
 @media (max-width: 1100px) { .chatdock { height: 300px; } }
+
+/* ---------------------------------------------------------------- 分析工具（第三集）：排序、篩選、圖表、樞紐分析表、藍本 */
+.se-main { flex: 1; min-height: 0; display: flex; }
+.se-main > .se-scroll { flex: 1; min-width: 0; }
+.st-group { display: inline-flex; gap: 4px; flex-wrap: wrap; padding-left: 6px; margin-left: 4px; border-left: 1px solid var(--line); }
+.st-drawer { width: 360px; flex: none; border-left: 1px solid var(--line); overflow-y: auto; padding: 8px; background: var(--panel-2); display: flex; flex-direction: column; gap: 10px; }
+.st-drawer[hidden] { display: none; }
+.st-sec-head, .st-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.st-sec-head > button, .st-card-head > button:first-of-type { margin-left: auto; }
+.st-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; margin-bottom: 8px; }
+.st-chart svg { display: block; max-width: 100%; height: auto; }
+.st-chart text { fill: var(--ink-2); font-size: 9px; font-family: inherit; }
+.st-chart .st-ct { font-size: 11px; font-weight: 700; fill: var(--ink); }
+.st-chart .st-at { font-size: 9.5px; font-weight: 700; }
+.st-chart .st-grid { stroke: var(--line); stroke-width: .6; }
+.st-chart .st-axis { stroke: var(--ink-3); stroke-width: 1; }
+.st-pivot { overflow-x: auto; }
+.st-pivot table, .st-scen { font-size: .82rem; border-collapse: collapse; width: 100%; }
+.st-pivot th, .st-pivot td, .st-scen th, .st-scen td { border: 1px solid var(--line); padding: 2px 6px; }
+.st-pivot thead th, .st-scen thead th { background: var(--info-bg); }
+.st-pivot tbody th { text-align: left; font-weight: 600; background: var(--panel-2); }
+.st-pivot tr.total td, .st-pivot tr.total th { border-top: 2px solid var(--ink-3); }
+.st-scen tr.cur td { color: var(--ink-3); font-style: italic; }
+.st-filters { position: absolute; inset: 0 auto auto 0; pointer-events: none; }
+.st-fbtn { position: absolute; pointer-events: auto; width: 17px; height: 17px; min-height: 0; padding: 0; font-size: 10px; line-height: 1; border-radius: 4px; box-shadow: none; background: var(--panel); border: 1px solid var(--ink-3); z-index: 3; }
+.st-fbtn.on { background: var(--info); color: #fff; border-color: var(--info); }
+.se-rowh.filtered { color: var(--info); }
+.se-filtered { color: var(--info); font-weight: 700; }
+.st-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1000; display: grid; place-items: center; padding: 16px; }
+.st-modal { background: var(--panel); color: var(--ink); border-radius: 14px; width: min(560px, 100%); max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.st-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.st-modal-body { padding: 10px 14px; overflow-y: auto; }
+.st-modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.st-vals { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+.st-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 6px 0; }
+.st-grid2 label { display: flex; flex-direction: column; gap: 2px; font-size: .9rem; }
+.st-chart-pv { border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+@media (max-width: 1100px) { .st-drawer { width: 280px; } }
