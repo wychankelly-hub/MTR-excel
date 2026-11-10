@@ -100,7 +100,7 @@ test.after(() => { for (const ch of children) ch.kill('SIGKILL'); });
 test('以 RENDER_EXTERNAL_URL 啟動伺服器：經過多個保持喚醒週期仍然運行；只在比賽進行中自我喚醒', { timeout: 120000 }, async () => {
   const port = 43000 + Math.floor(Math.random() * 400);
   const origin = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, PORT: String(port), RENDER_EXTERNAL_URL: origin, KEEP_AWAKE_INTERVAL_MS: '150', ALLOW_DEMO_LOGIN: 'true', DEMO_TEACHER_PIN: 'w-pin-2468', SESSION_SECRET: 'w-secret', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', DATA_DIR };
+  const env = { ...process.env, PORT: String(port), RENDER_EXTERNAL_URL: origin, KEEP_AWAKE_INTERVAL_MS: '150', KEEP_AWAKE_ACTIVE_WINDOW_MS: '3000', KEEP_AWAKE_CONNECTED_WINDOW_MS: '3000', ALLOW_DEMO_LOGIN: 'true', DEMO_TEACHER_PIN: 'w-pin-2468', SESSION_SECRET: 'w-secret', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', DATA_DIR };
   delete env.DATABASE_URL;
   const child = spawn(process.execPath, ['server/index.js'], { cwd: path.resolve(import.meta.dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   children.add(child);
@@ -113,7 +113,8 @@ test('以 RENDER_EXTERNAL_URL 啟動伺服器：經過多個保持喚醒週期�
     const t = setTimeout(() => reject(new Error(out)), 30000);
     child.stdout.on('data', () => { if (out.includes('伺服器：')) { clearTimeout(t); resolve(); } });
   });
-  const stats = async () => (await (await fetch(`${origin}/healthz`)).json()).keepAwake;
+  const health = async () => (await fetch(`${origin}/healthz`)).json();
+  const stats = async () => (await health()).keepAwake;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // 閒置（沒有比賽）：計時器多次執行，不自我喚醒，程序沒有結束
@@ -133,13 +134,27 @@ test('以 RENDER_EXTERNAL_URL 啟動伺服器：經過多個保持喚醒週期�
   await call('POST', `/teacher/competitions/${id}/generate`, {});
   await call('POST', `/teacher/competitions/${id}/approve`, {});
   await call('POST', `/teacher/competitions/${id}/lobby`, {});
-  const p0 = (await stats()).pings;
+  const h0 = await health();
+  const p0 = h0.keepAwake.pings;
   await wait(1500); // 約 10 個週期
   s = await stats();
   assert.equal(exited, null, `伺服器結束了：${out}`);
   assert.ok(s.pings - p0 >= 5, `上課中自我喚醒 ${s.pings - p0} 次`);
   assert.equal(s.errors, 0);
   assert.equal(s.pingFailures, 0, '自我請求成功（健康檢查 200）');
+  // 自我喚醒只請求 /healthz（不讀寫資料庫）：多次自我請求後，資料庫寫入次數不變
+  assert.equal((await health()).storage.usage.writes, h0.storage.usage.writes, '自我喚醒不會寫入資料庫');
+
+  // 下課：沒有真實請求超過活動時限（測試設為 3 秒）、沒有即時連線 → 停止自我喚醒，網站可以休眠。
+  // 期間的 /healthz 請求（包括自我喚醒本身）不算作活動，所以不會無限期保持喚醒
+  await wait(2500);
+  const p1 = (await stats()).pings;
+  await wait(1200);
+  s = await stats();
+  assert.equal(s.pings, p1, `下課後仍自我喚醒 ${s.pings - p1} 次`);
+  assert.ok(s.ticks > 20, '計時器繼續執行（只是不再自我喚醒）');
+  assert.equal(exited, null, `伺服器結束了：${out}`);
+  assert.equal(s.errors, 0);
   assert.ok(!/ReferenceError|計時器「/.test(out), out);
   child.kill('SIGKILL');
 });
