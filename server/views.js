@@ -219,6 +219,7 @@ export function teacherView(comp) {
     taskOverrides: comp.taskOverrides || {},
     reopens: comp.reopens || [],
     drivers: teacherDriverView(comp),
+    lastRecovery: comp.lastRecovery && clock.now() - comp.lastRecovery.at < 15 * 60 * 1000 ? comp.lastRecovery : null,
     chatSummary: chatSummary(comp),
     generation: comp.generation ? { ...comp.generation } : null,
     // 預檢表的數據摘要欄（每集不同）

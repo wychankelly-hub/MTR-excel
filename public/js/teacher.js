@@ -114,6 +114,8 @@ function renderAll() {
   $('status').textContent = comp ? (STATUS_LABEL[comp.status] || comp.status) : '未選擇比賽';
   if ($('tsub')) $('tsub').textContent = comp?.episodeTitle ? `定過抬油：站長爭奪戰・${comp.episodeTitle}` : '定過抬油：站長爭奪戰';
   clear($('banner'), comp ? demoBanner(comp.demo) : null, comp?.paused ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0 } }, `⏸ 比賽暫停中：${comp.pauseReason || ''}`) : null,
+    comp?.lastRecovery ? h('div.notice.info', { style: { margin: 0, borderRadius: 0 } }, `ℹ 伺服器在 ${fmtClock(comp.lastRecovery.at)} 曾中斷約 ${Math.round(comp.lastRecovery.gapMs / 1000)} 秒（雲端平台重新啟動）：已補回時間並自動繼續，已儲存的作答沒有遺失。`) : null,
+    comp && comp.settings?.randomDriver === false && !['RESULTS', 'ARCHIVED', 'CANCELLED'].includes(comp.status) ? h('div.notice.warn', { style: { margin: 0, borderRadius: 0 } }, '⚠ 隨機 Driver 已關閉：所有隊員都可以同時輸入及提交，隊友可能互相覆蓋。可在「H. Driver 及對話」開啟。') : null,
     comp && comp.health?.sheets !== 'Ready' && comp.adapter === 'google' ? h('div.notice.bad', { style: { margin: 0, borderRadius: 0 } }, `Google Sheets 狀態：${comp.health.sheets}${comp.health.lastSheetsError ? `（${comp.health.lastSheetsError.message}）` : ''}`) : null);
   clear($('tabs'), TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', className: tab === k ? 'active' : '', disabled: !comp && !['setup', 'audio', 'chars', 'system'].includes(k), onclick: () => { tab = k; history.replaceState(null, '', `#${k}`); renderAll(); } }, label)));
   renderView();
@@ -171,7 +173,7 @@ function viewSetup() {
       h('option', { value: 'google', selected: comp?.adapter === 'google', disabled: me.provider === 'demo' }, `舊模式：Google Sheets${me.provider === 'demo' ? '（需以 Google 登入）' : googleReady ? '' : '（Google 尚未連接）'}`)),
     taskByTask: h('input', { type: 'checkbox', checked: !!s?.taskByTask }),
     lockOnComplete: h('input', { type: 'checkbox', checked: s ? s.lockOnComplete !== false : true }),
-    randomDriver: h('input', { type: 'checkbox', checked: s ? !!s.randomDriver : true }),
+    randomDriver: h('input', { type: 'checkbox', checked: s ? s.randomDriver !== false : true }),
     chatEnabled: h('input', { type: 'checkbox', checked: s ? s.chatEnabled !== false : true }),
     teamSelection: h('select', h('option', { value: 'teacher', selected: !s || s.teamSelection === 'teacher' }, '老師分隊（建議）'), h('option', { value: 'student', selected: s?.teamSelection === 'student' }, '學生加入時自選一次')),
     requireGoogle: h('input', { type: 'checkbox', checked: !!s?.requireGoogle }),
@@ -512,7 +514,7 @@ function viewDrivers() {
     h('div.card',
       h('div.row',
         h('h2', { style: { margin: 0 } }, '🚆 隨機 Driver'),
-        h('label', h('input', { type: 'checkbox', checked: !!s.randomDriver, onchange: (e) => patch({ randomDriver: e.target.checked }, e.target.checked ? '已開啟隨機 Driver' : '已關閉隨機 Driver（所有隊員都可輸入及提交）') }), '開啟（每一題由一名隊員輸入及提交）'),
+        h('label', h('input', { type: 'checkbox', checked: s.randomDriver !== false, onchange: (e) => patch({ randomDriver: e.target.checked }, e.target.checked ? '已開啟隨機 Driver' : '已關閉隨機 Driver（所有隊員都可輸入及提交）') }), '開啟（每一題由一名隊員輸入及提交）'),
         h('label', h('input', { type: 'checkbox', checked: s.chatEnabled !== false, onchange: (e) => patch({ chatEnabled: e.target.checked }, e.target.checked ? '已開啟隊伍對話' : '已關閉全部隊伍對話') }), '隊伍對話')),
       h('p.muted', '每一題開始時按公平輪換（每人輪到一次才重新洗牌，跳過未連線的學生）選出 Driver。答錯或短暫斷線都不會更換 Driver；Driver 離線超過 45 秒時這裏會提示，你可以重新抽選或指定。'),
       !D.enabled ? h('p.notice.info', '隨機 Driver 未開啟：所有隊員都可以輸入及提交。') : null,

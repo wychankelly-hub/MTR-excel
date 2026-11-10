@@ -40,7 +40,7 @@ before(async () => {
   T = agent();
   await T('POST', '/auth/demo', { role: 'teacher', pin: '2468' });
   // 這個測試會重複提交同一題，所以關閉「全對後鎖定」
-  id = (await T('POST', '/teacher/competitions', { episode: 'E3', teamCount: 4, classCode: '4G', lockOnComplete: false })).body.id;
+  id = (await T('POST', '/teacher/competitions', { randomDriver: false, episode: 'E3', teamCount: 4, classCode: '4G', lockOnComplete: false })).body.id;
   await T('POST', `/teacher/competitions/${id}/generate`, {});
   await T('POST', `/teacher/competitions/${id}/approve`);
   await T('POST', `/teacher/competitions/${id}/lobby`);

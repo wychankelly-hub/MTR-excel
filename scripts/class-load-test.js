@@ -37,6 +37,12 @@ const show = (v) => (v && typeof v === 'object' ? JSON.stringify(v).slice(0, 60)
 const C = await import('../server/competition.js');
 const store = await import('../server/store.js');
 
+// 伺服器健康：事件迴圈延遲（被長時間計算阻塞）及記憶體
+const { monitorEventLoopDelay } = await import('node:perf_hooks');
+const loopDelay = monitorEventLoopDelay({ resolution: 10 });
+loopDelay.enable();
+let peakRss = 0;
+const memTimer = setInterval(() => { peakRss = Math.max(peakRss, process.memoryUsage().rss); }, 200);
 const srv = startServer(0);
 await new Promise((r) => srv.on('listening', r));
 const base = `http://127.0.0.1:${srv.address().port}/api`;
@@ -306,6 +312,8 @@ console.log(`偵測到的衝突（沒有無聲覆蓋）：${conflicts}`);
 console.log(`五關全部完成的隊伍：${done}/${TEAMS}`);
 console.log(`練習提交後分數不變：${before === after ? '是' : '否'}`);
 console.log(`資料庫寫入：${info.usage.writes} 次、${info.usage.cellsWritten} 格、${info.usage.mbWritten} MB`);
+clearInterval(memTimer);
+console.log(`事件迴圈延遲：p99 ${(loopDelay.percentile(99) / 1e6).toFixed(0)} ms、最長 ${(loopDelay.max / 1e6).toFixed(0)} ms；記憶體最高 ${(peakRss / 1048576).toFixed(0)} MB`);
 console.log(`伺服器錯誤／不變量失敗：${errors.length}`);
 for (const [e, n] of Object.entries(errors.reduce((o, x) => { const k = x.replace(/[0-9a-f]{6,}|\d+/g, '#'); o[k] = (o[k] || 0) + 1; return o; }, {})).slice(0, 20)) console.log(`  ✗ ${e}${n > 1 ? `（×${n}）` : ''}`);
 srv.stop();

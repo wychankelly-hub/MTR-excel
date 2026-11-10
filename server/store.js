@@ -18,6 +18,7 @@ const empty = () => ({
   users: {},
   sessions: {},
   competitions: {},
+  datasets: {}, // compId -> 已批准數據集（避免重新啟動後在課堂中重新生成，阻塞伺服器）
   demoSheets: {}, // 舊版（只讀保留）：compId -> teamId -> sheet -> { addr: input }；啟動時轉移到 cells
   cells: {}, // 內置工作表：compId -> teamId -> sheetKey -> addr -> { i: 輸入, v: 版本, by: 使用者, at: 時間 }
   audioAssets: {}, // lineId -> { status, reviewedBy, reviewedAt }
@@ -109,6 +110,7 @@ export async function init() {
       if (m[2]) c[m[2]][Number(m[3])] = value;
       else c.core = value;
     } else if (key.startsWith('demoSheets:')) state.demoSheets[key.slice(11)] = value;
+    else if (key.startsWith('datasets:')) state.datasets[key.slice(9)] = value;
     else if (key in state) state[key] = value;
   }
   for (const [id, { core, sub, audit, chat }] of Object.entries(comps)) {
@@ -209,12 +211,14 @@ function snapshotKeys(all, groups) {
     for (const k of ['users', 'sessions', 'audioAssets', 'googleOAuth', 'heartbeat']) out.set(k, s[k]);
     for (const [id, c] of Object.entries(s.competitions)) addCompetition(out, id, c);
     for (const [id, d] of Object.entries(s.demoSheets)) out.set(`demoSheets:${id}`, d);
+    for (const [id, d] of Object.entries(s.datasets || {})) out.set(`datasets:${id}`, d);
     return out;
   }
   for (const g of groups) {
     if (g === 'heartbeat') out.set(g, s.heartbeat);
     else if (g.startsWith('competition:')) { const c = s.competitions[g.slice(12)]; if (c) addCompetition(out, g.slice(12), c); }
     else if (g.startsWith('demoSheets:')) { const d = s.demoSheets[g.slice(11)]; if (d) out.set(g, d); }
+    else if (g.startsWith('datasets:')) { const d = s.datasets?.[g.slice(9)]; if (d) out.set(g, d); }
   }
   return out;
 }

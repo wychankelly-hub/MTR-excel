@@ -32,7 +32,7 @@ before(async () => {
   base = `http://127.0.0.1:${srv.address().port}/api`;
   T = agent();
   await T('POST', '/auth/demo', { role: 'teacher', pin: '2468' });
-  compId = (await T('POST', '/teacher/competitions', { teamCount: 4, classCode: '4K' })).body.id;
+  compId = (await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 4, classCode: '4K' })).body.id;
   await T('POST', `/teacher/competitions/${compId}/generate`, {});
   await T('POST', `/teacher/competitions/${compId}/approve`);
   await T('POST', `/teacher/competitions/${compId}/lobby`);
@@ -167,7 +167,7 @@ test('重新啟動後（重新載入資料）：作答及版本號保留；舊�
   const ver = saved.cells[compId].t1.L1_Fare.H3.v;
   // 模擬舊版資料：另一場比賽只有 demoSheets（整份工作表一個紀錄）
   const t = store.db.state.users[Object.keys(store.db.state.users).find((k) => store.db.state.users[k].role === 'teacher')];
-  const old = C.createCompetition(t, { teamCount: 4, adapter: 'demo' });
+  const old = C.createCompetition(t, { teamCount: 4, adapter: 'demo', randomDriver: false });
   C.generate(old, t);
   await C.approve(old, t);
   delete store.db.state.cells[old.id];

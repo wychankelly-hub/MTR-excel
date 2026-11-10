@@ -14,6 +14,7 @@ import { episodeOf, episodeById } from './episodes/index.js';
 import { configureSheets, MAIN, forgetComp as forgetSheets } from './sheets.js';
 import { expandRange } from './engine/refs.js';
 import { syncDrivers, driverMode, driverOf } from './drivers.js';
+import { runGeneration } from './generation.js';
 
 export const STATUS = {
   DRAFT: 'DRAFT', PREFLIGHT: 'PREFLIGHT', APPROVED: 'APPROVED', LOBBY: 'LOBBY',
@@ -28,8 +29,14 @@ export function getDatasets(comp) {
   if (!comp.generation) throw new HttpError(409, '尚未生成數據。', 'NO_DATASET');
   let entry = datasetCache.get(comp.id);
   if (!entry || entry.seed !== comp.generation.seed) {
-    const keys = comp.teams.map((t) => t.key);
-    const list = episodeOf(comp).generateCompetitionDatasets(comp.generation.seed, keys);
+    // 先用資料庫中儲存的數據集（重新啟動後不需要重新生成：生成在免費主機上要數十秒，會阻塞整個伺服器）
+    const stored = db.state.datasets?.[comp.id];
+    let list = stored && stored.seed === comp.generation.seed && stored.list?.length === comp.teams.length ? stored.list : null;
+    if (list && comp.teams.some((t, i) => comp.generation.teams?.[t.id]?.checksums && checksum(comp.generation.teams[t.id].checksums) !== checksum(list[i].checksums))) list = null;
+    if (!list) {
+      list = episodeOf(comp).generateCompetitionDatasets(comp.generation.seed, comp.teams.map((t) => t.key));
+      storeDatasets(comp, comp.generation.seed, list);
+    }
     const byTeamId = {};
     comp.teams.forEach((t, i) => {
       const ds = list[i];
@@ -43,6 +50,12 @@ export function getDatasets(comp) {
     datasetCache.set(comp.id, entry);
   }
   return entry.byTeamId;
+}
+
+function storeDatasets(comp, seed, list) {
+  db.state.datasets ??= {};
+  db.state.datasets[comp.id] = { seed, list: list.map((ds) => ({ ...ds, rejected: (ds.rejected || []).map((r) => ({ attempt: r.attempt })) })) };
+  save(`datasets:${comp.id}`);
 }
 
 export function getDataset(comp, team) {
@@ -244,7 +257,7 @@ export function createCompetition(teacher, opts = {}) {
       allowedDomains: cleanDomains(opts.allowedDomains),
       requireGoogle: !!opts.requireGoogle,
       // 隨機 Driver：每一題由一名隊員輸入及提交，其他隊員唯讀並在隊伍對話討論
-      randomDriver: !!opts.randomDriver,
+      randomDriver: opts.randomDriver !== false,
       chatEnabled: opts.chatEnabled !== false,
       chatMutedTeams: [],
     },
@@ -348,35 +361,33 @@ export function untaughtFor(comp, level) {
 }
 
 // ------------------------------------------------------------------ C. Dataset Preflight
-export function generate(comp, teacher, { newSeed = true } = {}) {
-  requireOwner(comp, teacher);
-  if (![STATUS.DRAFT, STATUS.PREFLIGHT].includes(comp.status)) throw new HttpError(409, '數據已批准並鎖定，不能重新生成。如需修訂請建立新比賽（會保留審計紀錄）。', 'LOCKED');
+export function generate(comp, teacher, { newSeed = true, precomputed = null } = {}) {
+  checkCanGenerate(comp, teacher);
   datasetCache.delete(comp.id);
-  const t0 = Date.now();
-  const rejectedSeeds = [];
-  let seed; let list; let teams; let preflight; let pass;
-  // Preflight 未通過 → 自動以新 Seed 重抽（最多 5 次），並記錄被拒絕的 Seed
-  for (let attempt = 0; attempt < 5; attempt++) {
-    seed = attempt === 0 && !newSeed && comp.generation ? comp.generation.seed : `S-${randCode(12)}`;
-    list = episodeOf(comp).generateCompetitionDatasets(seed, comp.teams.map((t) => t.key));
-    teams = {};
-    preflight = {};
-    comp.teams.forEach((t, i) => {
-      const ds = list[i];
-      teams[t.id] = { teamSeed: ds.teamSeed, attempts: ds.attempts, rejectedAttempts: ds.rejected.length, checksums: ds.checksums, flags: ds.flags };
-      const p = episodeOf(comp).preflightTeam(ds);
-      preflight[t.id] = { pass: p.pass, total: p.total, failed: p.failed };
-    });
-    pass = Object.values(preflight).every((p) => p.pass);
-    if (pass || (!newSeed && attempt === 0 && comp.generation)) break;
-    rejectedSeeds.push({ seed, failed: Object.entries(preflight).filter(([, p]) => !p.pass).map(([k, p]) => ({ teamId: k, failed: p.failed })) });
-  }
+  const fixedSeed = !newSeed && comp.generation ? comp.generation.seed : null;
+  const r = precomputed || runGeneration({ episodeId: episodeOf(comp).id, teamKeys: comp.teams.map((t) => t.key), fixedSeed });
+  const { seed, list, pass } = r;
+  const teams = {};
+  const preflight = {};
+  comp.teams.forEach((t, i) => {
+    const ds = list[i];
+    teams[t.id] = { teamSeed: ds.teamSeed, attempts: ds.attempts, rejectedAttempts: ds.rejected.length, checksums: ds.checksums, flags: ds.flags };
+    preflight[t.id] = r.preflight[i];
+  });
+  const rejectedSeeds = r.rejectedSeeds.map((x) => ({ seed: x.seed, failed: x.failed.map((f) => ({ teamId: comp.teams.find((t) => t.key === f.teamKey)?.id, failed: f.failed })) }));
   datasetCache.set(comp.id, { seed, byTeamId: Object.fromEntries(comp.teams.map((t, i) => [t.id, list[i]])) });
-  comp.generation = { seed, generatorVersion: episodeOf(comp).generatorVersion, templateVersion: episodeOf(comp).templateVersion, at: clock.now(), ms: Date.now() - t0, teams, preflight, pass, rejectedSeeds };
+  storeDatasets(comp, seed, list);
+  comp.generation = { seed, generatorVersion: episodeOf(comp).generatorVersion, templateVersion: episodeOf(comp).templateVersion, at: clock.now(), ms: r.ms, teams, preflight, pass, rejectedSeeds };
   comp.status = STATUS.PREFLIGHT;
   audit(comp, teacher, 'GENERATE_DATASETS', { seed, pass });
   changed(comp, 'generate');
   return comp.generation;
+}
+
+/** 檢查是否可以生成（在背景生成之前及之後都檢查一次） */
+export function checkCanGenerate(comp, teacher) {
+  requireOwner(comp, teacher);
+  if (![STATUS.DRAFT, STATUS.PREFLIGHT].includes(comp.status)) throw new HttpError(409, '數據已批准並鎖定，不能重新生成。如需修訂請建立新比賽（會保留審計紀錄）。', 'LOCKED');
 }
 
 /** 老師預覽某隊數據、參考公式及預期值（只供老師） */
@@ -913,6 +924,8 @@ export function pause(comp, by, reason = '老師暫停') {
  * 如有關卡正在進行，由「伺服器最後確認仍在運行」的時間起自動暫停：
  * 中斷期間不計時，學生不會因伺服器離線而失去作答時間；老師確認學生已重新連線後按「繼續」。
  */
+export const AUTO_RESUME_MS = Number(process.env.AUTO_RESUME_MS) || 120000;
+
 export function recoverAfterRestart(lastAliveAt, now = clock.now()) {
   const recovered = [];
   if (!lastAliveAt) return recovered;
@@ -922,6 +935,15 @@ export function recoverAfterRestart(lastAliveAt, now = clock.now()) {
     if (comp.paused) continue; // 老師在中斷前已暫停：暫停時間照常計算，不需處理
     const active = episodeOf(comp).levels.filter((lv) => comp.levels[lv.level]?.phase === 'active');
     if (!active.length) continue;
+    // 短暫中斷（例如雲端平台重新啟動，約 1 分鐘）：自動補回中斷時間並繼續，不需要老師按「繼續」
+    if (now - at <= AUTO_RESUME_MS) {
+      for (const lv of active) comp.levels[lv.level].pausedMs = (comp.levels[lv.level].pausedMs || 0) + (now - at);
+      comp.lastRecovery = { at: now, gapMs: now - at };
+      audit(comp, null, 'AUTO_RECOVERY_RESUMED', { lastAliveAt: at, restartedAt: now, gapMs: now - at, levels: active.map((lv) => lv.level) });
+      changed(comp, 'recovery');
+      recovered.push({ compId: comp.id, gapMs: now - at, levels: active.map((lv) => lv.level), resumed: true });
+      continue;
+    }
     comp.paused = true;
     comp.pauseReason = `伺服器曾中斷約 ${gapS} 秒，系統已自動暫停並補回中斷期間的作答時間。請確認學生已重新連線，然後按「繼續」。`;
     comp.prevStatus = comp.status;
@@ -990,6 +1012,7 @@ export function deleteCompetition(comp, teacher) {
   forgetSheets(comp.id);
   delete db.state.competitions[comp.id];
   datasetCache.delete(comp.id);
+  if (db.state.datasets) delete db.state.datasets[comp.id];
   save();
 }
 

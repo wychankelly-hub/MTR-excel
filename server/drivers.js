@@ -13,7 +13,10 @@ import { taskPhase, openReopens, audit } from './competition.js';
 export const OFFLINE_GRACE_MS = 45000; // Driver 離線超過此時間，老師畫面提示可重新指派
 const HISTORY_MAX = 400;
 
-export const driverMode = (comp) => !!comp?.settings?.randomDriver;
+// 預設開啟：只有老師明確關閉（randomDriver === false）才讓所有隊員都可以輸入及提交。
+// 舊比賽沒有這個設定時亦會開啟，避免隊友同時修改同一格互相覆蓋。
+// 舊模式的 Google Sheets 比賽不適用（修改在 Google Sheets 進行，伺服器不能控制）。
+export const driverMode = (comp) => !!comp?.settings && comp.settings.randomDriver !== false && comp.adapter !== 'google';
 
 function stateOf(comp, teamId) {
   comp.drivers ??= {};

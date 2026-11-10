@@ -18,7 +18,7 @@ test.after(() => { for (const ch of children) ch.kill('SIGKILL'); });
 function startServer(port) {
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: ROOT,
-    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: DB, PORT: String(port), DEMO_TEACHER_PIN: 'cloud-pin-8899', SESSION_SECRET: 'fixed-secret-for-test', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '' },
+    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: DB, PORT: String(port), DEMO_TEACHER_PIN: 'cloud-pin-8899', SESSION_SECRET: 'fixed-secret-for-test', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', AUTO_RESUME_MS: '1' }, // 測試較長中斷：自動暫停
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.add(child);

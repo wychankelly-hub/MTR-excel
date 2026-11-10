@@ -26,7 +26,7 @@ before(async () => {
   base = `http://127.0.0.1:${srv.address().port}/api`;
   T = agent();
   await T('POST', '/auth/demo', { role: 'teacher', pin: '2468' });
-  compId = (await T('POST', '/teacher/competitions', { teamCount: 6, classCode: '4A' })).body.id;
+  compId = (await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 6, classCode: '4A' })).body.id;
 });
 after(() => srv.stop());
 
@@ -58,11 +58,11 @@ test('1. 一場 6 隊、20 人能正常加入；亦可設定 4 或 7 隊', async
   const v = (await T('GET', `/teacher/competitions/${compId}`)).body;
   assert.deepEqual(v.teams.map((t) => t.members.length), layout);
   for (const n of [4, 7]) {
-    const c = (await T('POST', '/teacher/competitions', { teamCount: n })).body.id;
+    const c = (await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: n })).body.id;
     assert.equal((await T('GET', `/teacher/competitions/${c}`)).body.teams.length, n);
   }
-  assert.equal((await T('POST', '/teacher/competitions', { teamCount: 8 })).status, 400);
-  assert.equal((await T('POST', '/teacher/competitions', { teamCount: 3 })).status, 400);
+  assert.equal((await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 8 })).status, 400);
+  assert.equal((await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 3 })).status, 400);
 });
 
 test('2. 學生不可在未授權下讀寫另一隊的工作表', async () => {

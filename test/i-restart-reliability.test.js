@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function startServer(port) {
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: ROOT,
-    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: DB, PORT: String(port), DEMO_TEACHER_PIN: 'cloud-pin-8899', SESSION_SECRET: 'fixed-secret-for-test', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '' },
+    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: DB, PORT: String(port), DEMO_TEACHER_PIN: 'cloud-pin-8899', SESSION_SECRET: 'fixed-secret-for-test', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', AUTO_RESUME_MS: '1' }, // 測試較長中斷：自動暫停
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.add(child);
@@ -93,7 +93,7 @@ test('伺服器在提交途中被強制終止：已回覆的答案不遺失、�
   await srv.ready;
   const T = agent(base);
   assert.equal((await T('POST', '/api/auth/demo', { role: 'teacher', pin: 'cloud-pin-8899' })).status, 200);
-  const { id } = (await T('POST', '/api/teacher/competitions', { teamCount: 6, classCode: '4R' })).body;
+  const { id } = (await T('POST', '/api/teacher/competitions', { teamCount: 6, classCode: '4R', randomDriver: false })).body;
   await T('POST', `/api/teacher/competitions/${id}/generate`, {});
   await T('POST', `/api/teacher/competitions/${id}/approve`);
   await T('POST', `/api/teacher/competitions/${id}/lobby`);

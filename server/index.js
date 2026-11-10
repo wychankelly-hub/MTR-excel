@@ -20,6 +20,7 @@ import { submissionSummary } from './submission.js';
 import { addClient, clientCount } from './realtime.js';
 import { postChat, chatFor, deleteChat, chatAllowed, announceChat } from './chat.js';
 import { setDriver } from './drivers.js';
+import { runGenerationInWorker } from './generation.js';
 import { bus } from './bus.js';
 import { assetTable, reviewAsset, uploadAsset, resolvedEvent, regenerateAsset, revertAsset, autoFillMissingAudio } from './audio-assets.js';
 import { localTtsStatus } from './tts/local-tts.js';
@@ -182,7 +183,23 @@ export function createApp() {
     res.json({ ...teacherView(comp), clients: clientCount(comp.id) });
   });
   api.patch('/teacher/competitions/:id', (req, res) => { const { t, comp } = owned(req); C.updateSettings(comp, t, req.body || {}); res.json({ ok: true }); });
-  api.post('/teacher/competitions/:id/generate', (req, res) => { const { t, comp } = owned(req); res.json(C.generate(comp, t, { newSeed: req.body?.newSeed !== false })); });
+  // 生成數據＋Preflight 在背景執行緒進行：免費主機上要數十秒，期間伺服器仍可回應其他班別的學生及健康檢查
+  const generating = new Set();
+  api.post('/teacher/competitions/:id/generate', async (req, res) => {
+    const { t, comp } = owned(req);
+    C.checkCanGenerate(comp, t);
+    if (generating.has(comp.id)) throw new HttpError(409, '正在生成數據，請稍候。', 'GENERATING');
+    generating.add(comp.id);
+    try {
+      const newSeed = req.body?.newSeed !== false;
+      const teamKeys = comp.teams.map((x) => x.key);
+      const result = await runGenerationInWorker({ episodeId: comp.episode || 'E1', teamKeys, fixedSeed: !newSeed && comp.generation ? comp.generation.seed : null });
+      if (comp.teams.map((x) => x.key).join() !== teamKeys.join()) throw new HttpError(409, '生成期間隊伍數目改變了，請再按一次「生成數據」。');
+      res.json(C.generate(comp, t, { newSeed, precomputed: result }));
+    } finally {
+      generating.delete(comp.id);
+    }
+  });
   api.get('/teacher/competitions/:id/preflight/:teamId', (req, res) => { const { t, comp } = owned(req); res.json(C.preflightDetail(comp, t, req.params.teamId)); });
   api.post('/teacher/competitions/:id/approve', async (req, res) => { const { t, comp } = owned(req); res.json(await C.approve(comp, t)); });
   api.post('/teacher/competitions/:id/provision', async (req, res) => { const { t, comp } = owned(req); res.json(await C.provisionAll(comp, t, { teamIds: req.body?.teamIds || null })); });
@@ -572,8 +589,17 @@ export function startServer(port = config.port) {
       await persistNow();
       console.log(`已把 ${moved} 格舊版工作表作答轉為逐格儲存（舊紀錄保留）`);
     }
+    // 進行中的比賽：開始接受連線之前先準備好數據集（已儲存的直接讀取；舊比賽只需生成一次並儲存）
+    let prepared = 0;
+    for (const comp of Object.values(db.state.competitions)) {
+      if (!comp.generation || ['ARCHIVED', 'CANCELLED', 'DRAFT'].includes(comp.status)) continue;
+      try { C.getDatasets(comp); prepared++; } catch (e) { console.error(`比賽 ${comp.id} 的數據未能準備：${e.message}`); }
+      // 進行中的比賽：立即為目前題目指派 Driver（包括更新前建立、沒有 randomDriver 設定的比賽）
+      if (comp.generation && !['RESULTS', 'ARCHIVED', 'CANCELLED'].includes(comp.status)) C.changed(comp, 'startup');
+    }
+    if (prepared) await persistNow();
     for (const r of C.recoverAfterRestart(db.lastAliveAt)) {
-      console.log(`⏸ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關已自動暫停（中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回）`);
+      console.log(r.resumed ? `▶ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回並自動繼續` : `⏸ 伺服器重新啟動：比賽 ${r.compId} 第 ${r.levels.join('、')} 關已自動暫停（中斷約 ${Math.round(r.gapMs / 1000)} 秒，時間已補回）`);
     }
     recovered = true;
     server.listen(port, () => {

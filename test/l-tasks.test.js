@@ -23,7 +23,7 @@ let seq = 0;
 const key = () => `l-test-key-${Date.now()}-${++seq}`;
 
 async function setup(opts = {}) {
-  const id = (await T('POST', '/teacher/competitions', { teamCount: 4, classCode: opts.classCode || '4L', ...opts })).body.id;
+  const id = (await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 4, classCode: opts.classCode || '4L', ...opts })).body.id;
   await T('POST', `/teacher/competitions/${id}/generate`, {});
   await T('POST', `/teacher/competitions/${id}/approve`);
   await T('POST', `/teacher/competitions/${id}/lobby`);
@@ -176,7 +176,7 @@ test('之前劇集的練習：學生已進入另一場比賽，仍可以練習�
   const A = await setup({ classCode: '4R' });
   await T('POST', `/teacher/competitions/${A.id}/levels/1/start`);
   await T('POST', `/teacher/competitions/${A.id}/levels/1/end`);
-  const B = (await T('POST', '/teacher/competitions', { teamCount: 4, classCode: '4R' })).body.id;
+  const B = (await T('POST', '/teacher/competitions', { randomDriver: false, teamCount: 4, classCode: '4R' })).body.id;
   await T('POST', `/teacher/competitions/${B}/generate`, {});
   await T('POST', `/teacher/competitions/${B}/approve`);
   await T('POST', `/teacher/competitions/${B}/lobby`);

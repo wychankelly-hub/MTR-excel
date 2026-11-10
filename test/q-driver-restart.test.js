@@ -16,7 +16,7 @@ const children = new Set();
 test.after(() => { for (const ch of children) ch.kill('SIGKILL'); });
 
 function startServer(port) {
-  const env = { ...process.env, PORT: String(port), ALLOW_DEMO_LOGIN: 'true', DEMO_TEACHER_PIN: 'q-pin-2468', SESSION_SECRET: 'q-fixed-secret', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', DATA_DIR };
+  const env = { ...process.env, PORT: String(port), ALLOW_DEMO_LOGIN: 'true', DEMO_TEACHER_PIN: 'q-pin-2468', SESSION_SECRET: 'q-fixed-secret', SECURE_COOKIES: 'false', NODE_TEST_CONTEXT: '', DATA_DIR, AUTO_RESUME_MS: '1' }; // 測試較長中斷：自動暫停
   if (DB) env.DATABASE_URL = DB; else delete env.DATABASE_URL;
   const child = spawn(process.execPath, ['server/index.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   children.add(child);
@@ -56,7 +56,7 @@ test('8. 強制終止伺服器後：Driver 指派、輪換、對話及公式全�
   await s.ready;
   const T = agent();
   await T('POST', '/auth/demo', { role: 'teacher', pin: 'q-pin-2468' });
-  const id = (await T('POST', '/teacher/competitions', { episode: 'E1', teamCount: 4, randomDriver: true, teamSelection: 'teacher' })).body.id;
+  const id = (await T('POST', '/teacher/competitions', { randomDriver: false, episode: 'E1', teamCount: 4, randomDriver: true, teamSelection: 'teacher' })).body.id;
   const tp = (p, b) => T('POST', `/teacher/competitions/${id}${p}`, b);
   await tp('/generate', {});
   await tp('/approve');
@@ -126,7 +126,7 @@ test('第三集：強制終止伺服器後，排序、篩選、圖表設定及�
   await s.ready;
   const T = agent();
   await T('POST', '/auth/demo', { role: 'teacher', pin: 'q-pin-2468' });
-  const id = (await T('POST', '/teacher/competitions', { episode: 'E3', teamCount: 4, teamSelection: 'teacher' })).body.id;
+  const id = (await T('POST', '/teacher/competitions', { randomDriver: false, episode: 'E3', teamCount: 4, teamSelection: 'teacher' })).body.id;
   const tp = (p, b) => T('POST', `/teacher/competitions/${id}${p}`, b);
   await tp('/generate', {}); await tp('/approve'); await tp('/lobby');
   let v = (await T('GET', `/teacher/competitions/${id}`)).body;
