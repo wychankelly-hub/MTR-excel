@@ -16,7 +16,8 @@ export function addClient(req, res, info, viewFn) {
   const client = { res, viewFn, info }; // info 可含 getter（例如 teamId 會隨轉隊改變）
   clients.add(client);
   send(client, 'state', viewFn());
-  const ka = setInterval(() => res.write(': keep-alive\n\n'), 20000);
+  const ka = setInterval(() => { try { res.write(': keep-alive\n\n'); } catch { /* 連線已關閉 */ } }, 20000);
+  res.on?.('error', () => { clearInterval(ka); clients.delete(client); });
   // 學生連線狀態（選擇 Driver、顯示 Driver 是否離線）：上線／離線時更新老師及隊友的畫面（不寫入資料庫）
   const student = info.role === 'student' && info.userId ? [info.compId, info.userId] : null;
   if (student && connected(...student)) bus.emit('changed', info.compId, 'presence');
@@ -82,6 +83,11 @@ bus.on('chat', (compId, teamId, payload) => {
     if (c.info.role === 'teacher' || (c.info.role === 'student' && c.info.teamId === teamId && isTeamMember(compId, teamId, c.info.userId))) send(c, 'chat', { teamId, ...payload });
   }
 });
+
+/** 所有即時連線（學生、老師、投影畫面）的數目：上課中仍開着的頁面 */
+export function totalClients() {
+  return clients.size;
+}
 
 export function clientCount(compId) {
   const out = { teacher: 0, student: 0, projector: 0 };

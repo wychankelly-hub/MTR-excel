@@ -17,7 +17,8 @@
     "google:smoke": "node scripts/google-smoke-test.js",
     "tts:generate": "node scripts/generate-tts.js",
     "preflight:report": "node scripts/preflight-report.js",
-    "tts:setup": "node scripts/tts-setup.js"
+    "tts:setup": "node scripts/tts-setup.js",
+    "lint": "npx --yes eslint@9 server scripts"
   },
   "dependencies": {
     "@googleapis/drive": "^27.0.0",

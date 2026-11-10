@@ -17,7 +17,8 @@ import * as sheets from './sheets.js';
 import { episodeOf } from './episodes/index.js';
 import { publicView, studentView, teacherView, resultsCsv, toCsv } from './views.js';
 import { submissionSummary } from './submission.js';
-import { addClient, clientCount } from './realtime.js';
+import { addClient, clientCount, totalClients } from './realtime.js';
+import { markActivity, startKeepAwake } from './keep-awake.js';
 import { postChat, chatFor, deleteChat, chatAllowed, announceChat } from './chat.js';
 import { setDriver } from './drivers.js';
 import { runGenerationInWorker } from './generation.js';
@@ -28,13 +29,15 @@ import { googleCredentialStatus, oauthClient, OAUTH_SCOPES } from './adapters/go
 import { SERIES_TITLE, EPISODE_TITLE, TEAM_PRESETS } from './episode1/blueprint.js';
 import { EPISODE_LIST } from './episodes/index.js';
 
+let keepAwakeRef = null;
+const keepAwakeStats = () => keepAwakeRef?.stats || { enabled: false };
+
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
-  // 最近一次真實使用（健康檢查不計）：自我喚醒只在課堂期間進行
-  let lastActivity = Date.now();
-  app.use((req, res, next) => { if (req.path !== '/healthz') lastActivity = Date.now(); next(); });
+  // 最近一次真實使用（健康檢查不計，包括自我喚醒的請求）：自我喚醒只在課堂期間進行（見 keep-awake.js）
+  app.use((req, res, next) => { if (req.path !== '/healthz') markActivity(); next(); });
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -63,7 +66,7 @@ export function createApp() {
   // 雲端平台健康檢查
   app.get('/healthz', (req, res) => {
     const ok = db.ready && !db.fenced;
-    res.status(ok ? 200 : 503).json({ ok, storage: storageInfo() });
+    res.status(ok ? 200 : 503).json({ ok, storage: storageInfo(), keepAwake: keepAwakeStats() });
   });
 
   // 會改變資料的請求（提交答案、提示、老師操作、工作表作答等）：先確認已寫入資料庫才回覆。
@@ -567,21 +570,22 @@ export function startServer(port = config.port) {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
   let recovered = false;
-  const timer = setInterval(() => { if (recovered && !db.fenced) C.tick(); }, 500);
+  // 計時器內的錯誤：記錄完整錯誤（老師可在 Render Logs 看到），但不可令整個伺服器在課堂中結束
+  const guarded = (name, fn) => () => {
+    try { fn(); } catch (e) { console.error(`計時器「${name}」出錯（伺服器繼續運行）：`, e); }
+  };
+  const timer = setInterval(guarded('關卡計時', () => { if (recovered && !db.fenced) C.tick(); }), 500);
   // 比賽計時中每 5 秒記錄「伺服器仍在運行」（很小的紀錄）；另每分鐘完整檢查一次有否未寫入的改變
   let beats = 0;
-  const alive = setInterval(() => {
+  const alive = setInterval(guarded('運行紀錄', () => {
     if (!recovered || db.fenced) return;
     if (C.anyLevelRunning()) heartbeat(clock.now());
     if (++beats % 12 === 0) save();
-  }, 5000);
+  }), 5000);
   // Render 免費方案閒置 15 分鐘會休眠：上課期間（有比賽在大堂或進行中，而且 45 分鐘內有人使用）
   // 每 10 分鐘經公開網址自我喚醒一次；下課後無人使用便停止，網站可以照常休眠（不會 24 小時運行）
-  const awake = process.env.RENDER_EXTERNAL_URL ? setInterval(() => {
-    const inLesson = Date.now() - lastActivity < 45 * 60 * 1000;
-    const live = db.ready && Object.values(db.state.competitions).some((c) => /^(LOBBY|RUNNING_|PAUSED)/.test(c.status));
-    if (live && inLesson) fetch(`${config.publicBaseUrl}/healthz`).catch(() => {});
-  }, 10 * 60 * 1000) : null;
+  const keepAwake = startKeepAwake({ url: process.env.RENDER_EXTERNAL_URL ? config.publicBaseUrl : null, connectedClients: totalClients });
+  keepAwakeRef = keepAwake;
   init().then(async () => {
     const moved = sheets.migrateLegacySheets();
     if (moved) {
@@ -620,9 +624,9 @@ export function startServer(port = config.port) {
     process.exitCode = 1;
     clearInterval(timer);
     clearInterval(alive);
-    clearInterval(awake);
+    keepAwake.stop();
   });
-  server.stop = async () => { clearInterval(timer); clearInterval(alive); clearInterval(awake); server.closeAllConnections?.(); server.close(); await close(); };
+  server.stop = async () => { clearInterval(timer); clearInterval(alive); keepAwake.stop(); server.closeAllConnections?.(); server.close(); await close(); };
   if (!process.env.NODE_TEST_CONTEXT) {
     const shutdown = async () => { await server.stop().catch(() => {}); process.exit(0); };
     process.on('SIGINT', shutdown);
