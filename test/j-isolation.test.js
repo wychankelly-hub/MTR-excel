@@ -166,7 +166,7 @@ test('兩班同時進行（4A／4B，隊伍名稱相同）：資料、分數、�
 });
 
 test('學生即時推送：只收到自己隊伍的工作表更新', async () => {
-  const c = await makeComp({ teamCount: 4, classCode: '4X' });
+  const c = await makeComp({ teamCount: 4, classCode: '4X', randomDriver: false }); // 本測試針對隊伍隔離（Driver 輪換另有測試）
   const S1 = agent();
   const S2 = agent();
   const S3 = agent();
